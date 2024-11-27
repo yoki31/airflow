@@ -14,16 +14,17 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
 from datetime import datetime
 
 from airflow.api_connexion.schemas.task_schema import TaskCollection, task_collection_schema, task_schema
-from airflow.operators.dummy import DummyOperator
+from airflow.operators.empty import EmptyOperator
 
 
 class TestTaskSchema:
     def test_serialize(self):
-        op = DummyOperator(
+        op = EmptyOperator(
             task_id="task_id",
             start_date=datetime(2020, 6, 16),
             end_date=datetime(2020, 6, 26),
@@ -31,8 +32,8 @@ class TestTaskSchema:
         result = task_schema.dump(op)
         expected = {
             "class_ref": {
-                "module_path": "airflow.operators.dummy",
-                "class_name": "DummyOperator",
+                "module_path": "airflow.operators.empty",
+                "class_name": "EmptyOperator",
             },
             "depends_on_past": False,
             "downstream_task_ids": [],
@@ -40,6 +41,7 @@ class TestTaskSchema:
             "execution_timeout": None,
             "extra_links": [],
             "owner": "airflow",
+            "operator_name": "EmptyOperator",
             "params": {},
             "pool": "default_pool",
             "pool_slots": 1.0,
@@ -50,40 +52,44 @@ class TestTaskSchema:
             "retry_exponential_backoff": False,
             "start_date": "2020-06-16T00:00:00+00:00",
             "task_id": "task_id",
+            "task_display_name": "task_id",
             "template_fields": [],
             "trigger_rule": "all_success",
             "ui_color": "#e8f7e4",
             "ui_fgcolor": "#000",
             "wait_for_downstream": False,
             "weight_rule": "downstream",
+            "is_mapped": False,
+            "doc_md": None,
         }
         assert expected == result
 
 
 class TestTaskCollectionSchema:
     def test_serialize(self):
-        tasks = [DummyOperator(task_id="task_id1", params={'foo': 'bar'})]
+        tasks = [EmptyOperator(task_id="task_id1", params={"foo": "bar"})]
         collection = TaskCollection(tasks, 1)
         result = task_collection_schema.dump(collection)
         expected = {
             "tasks": [
                 {
                     "class_ref": {
-                        "class_name": "DummyOperator",
-                        "module_path": "airflow.operators.dummy",
+                        "class_name": "EmptyOperator",
+                        "module_path": "airflow.operators.empty",
                     },
                     "depends_on_past": False,
                     "downstream_task_ids": [],
                     "end_date": None,
                     "execution_timeout": None,
                     "extra_links": [],
+                    "operator_name": "EmptyOperator",
                     "owner": "airflow",
-                    'params': {
-                        'foo': {
-                            '__class': 'airflow.models.param.Param',
-                            'value': 'bar',
-                            'description': None,
-                            'schema': {},
+                    "params": {
+                        "foo": {
+                            "__class": "airflow.models.param.Param",
+                            "value": "bar",
+                            "description": None,
+                            "schema": {},
                         }
                     },
                     "pool": "default_pool",
@@ -95,12 +101,15 @@ class TestTaskCollectionSchema:
                     "retry_exponential_backoff": False,
                     "start_date": None,
                     "task_id": "task_id1",
+                    "task_display_name": "task_id1",
                     "template_fields": [],
                     "trigger_rule": "all_success",
                     "ui_color": "#e8f7e4",
                     "ui_fgcolor": "#000",
                     "wait_for_downstream": False,
                     "weight_rule": "downstream",
+                    "is_mapped": False,
+                    "doc_md": None,
                 }
             ],
             "total_entries": 1,

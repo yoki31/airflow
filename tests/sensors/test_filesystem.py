@@ -15,31 +15,36 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-#
+from __future__ import annotations
 
 import os
 import shutil
 import tempfile
-import unittest
+from datetime import timedelta
 
 import pytest
 
-from airflow.exceptions import AirflowSensorTimeout
+from airflow.exceptions import AirflowSensorTimeout, TaskDeferred
 from airflow.models.dag import DAG
-from airflow.sensors.filesystem import FileSensor
+from airflow.providers.standard.sensors.filesystem import FileSensor
+from airflow.providers.standard.triggers.file import FileTrigger
 from airflow.utils.timezone import datetime
 
-TEST_DAG_ID = 'unit_tests_file_sensor'
+pytestmark = pytest.mark.db_test
+
+
+TEST_DAG_ID = "unit_tests_file_sensor"
 DEFAULT_DATE = datetime(2015, 1, 1)
 
 
-class TestFileSensor(unittest.TestCase):
-    def setUp(self):
-        from airflow.hooks.filesystem import FSHook
+@pytest.mark.skip_if_database_isolation_mode  # Test is broken in db isolation mode
+class TestFileSensor:
+    def setup_method(self):
+        from airflow.providers.standard.hooks.filesystem import FSHook
 
         hook = FSHook()
-        args = {'owner': 'airflow', 'start_date': DEFAULT_DATE}
-        dag = DAG(TEST_DAG_ID + 'test_schedule_dag_once', default_args=args)
+        args = {"owner": "airflow", "start_date": DEFAULT_DATE}
+        dag = DAG(TEST_DAG_ID + "test_schedule_dag_once", schedule=timedelta(days=1), default_args=args)
         self.hook = hook
         self.dag = dag
 
@@ -48,7 +53,7 @@ class TestFileSensor(unittest.TestCase):
             task = FileSensor(
                 task_id="test",
                 filepath=tmp.name[1:],
-                fs_conn_id='fs_default',
+                fs_conn_id="fs_default",
                 dag=self.dag,
                 timeout=0,
             )
@@ -60,7 +65,7 @@ class TestFileSensor(unittest.TestCase):
         task = FileSensor(
             task_id="test",
             filepath=temp_dir[1:] + "/file",
-            fs_conn_id='fs_default',
+            fs_conn_id="fs_default",
             dag=self.dag,
             timeout=0,
             poke_interval=1,
@@ -77,7 +82,7 @@ class TestFileSensor(unittest.TestCase):
         task = FileSensor(
             task_id="test",
             filepath=temp_dir[1:],
-            fs_conn_id='fs_default',
+            fs_conn_id="fs_default",
             dag=self.dag,
             timeout=0,
             poke_interval=1,
@@ -94,7 +99,7 @@ class TestFileSensor(unittest.TestCase):
         task = FileSensor(
             task_id="test",
             filepath=temp_dir[1:],
-            fs_conn_id='fs_default',
+            fs_conn_id="fs_default",
             dag=self.dag,
             timeout=0,
         )
@@ -118,13 +123,13 @@ class TestFileSensor(unittest.TestCase):
             task.run(start_date=DEFAULT_DATE, end_date=DEFAULT_DATE, ignore_ti_state=True)
 
     def test_wildcard_file(self):
-        suffix = '.txt'
+        suffix = ".txt"
         with tempfile.NamedTemporaryFile(suffix=suffix) as tmp:
-            fileglob = os.path.join(os.path.dirname(tmp.name), '*' + suffix)
+            fileglob = os.path.join(os.path.dirname(tmp.name), "*" + suffix)
             task = FileSensor(
-                task_id='test',
+                task_id="test",
                 filepath=fileglob,
-                fs_conn_id='fs_default',
+                fs_conn_id="fs_default",
                 dag=self.dag,
                 timeout=0,
             )
@@ -133,11 +138,11 @@ class TestFileSensor(unittest.TestCase):
 
     def test_wildcard_empty_directory(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            with tempfile.TemporaryDirectory(suffix='subdir', dir=temp_dir):
+            with tempfile.TemporaryDirectory(suffix="subdir", dir=temp_dir):
                 task = FileSensor(
-                    task_id='test',
-                    filepath=os.path.join(temp_dir, '*dir'),
-                    fs_conn_id='fs_default',
+                    task_id="test",
+                    filepath=os.path.join(temp_dir, "*dir"),
+                    fs_conn_id="fs_default",
                     dag=self.dag,
                     timeout=0,
                 )
@@ -149,27 +154,27 @@ class TestFileSensor(unittest.TestCase):
 
     def test_wildcard_directory_with_files(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            with tempfile.TemporaryDirectory(suffix='subdir', dir=temp_dir) as subdir:
+            with tempfile.TemporaryDirectory(suffix="subdir", dir=temp_dir) as subdir:
                 task = FileSensor(
-                    task_id='test',
-                    filepath=os.path.join(temp_dir, '*dir'),
-                    fs_conn_id='fs_default',
+                    task_id="test",
+                    filepath=os.path.join(temp_dir, "*dir"),
+                    fs_conn_id="fs_default",
                     dag=self.dag,
                     timeout=0,
                 )
                 task._hook = self.hook
 
                 # `touch` the file in subdir
-                open(os.path.join(subdir, 'file'), 'a').close()
+                open(os.path.join(subdir, "file"), "a").close()
                 task.run(start_date=DEFAULT_DATE, end_date=DEFAULT_DATE, ignore_ti_state=True)
 
     def test_wildcared_directory(self):
         temp_dir = tempfile.mkdtemp()
         subdir = tempfile.mkdtemp(dir=temp_dir)
         task = FileSensor(
-            task_id='test',
+            task_id="test",
             filepath=temp_dir + "/**",
-            fs_conn_id='fs_default',
+            fs_conn_id="fs_default",
             dag=self.dag,
             timeout=0,
             poke_interval=1,
@@ -185,15 +190,15 @@ class TestFileSensor(unittest.TestCase):
             shutil.rmtree(temp_dir)
 
     def test_subdirectory_not_empty(self):
-        suffix = '.txt'
+        suffix = ".txt"
         temp_dir = tempfile.mkdtemp()
         subdir = tempfile.mkdtemp(dir=temp_dir)
 
         with tempfile.NamedTemporaryFile(suffix=suffix, dir=subdir):
             task = FileSensor(
-                task_id='test',
+                task_id="test",
                 filepath=temp_dir,
-                fs_conn_id='fs_default',
+                fs_conn_id="fs_default",
                 dag=self.dag,
                 timeout=0,
             )
@@ -201,13 +206,13 @@ class TestFileSensor(unittest.TestCase):
             task.run(start_date=DEFAULT_DATE, end_date=DEFAULT_DATE, ignore_ti_state=True)
         shutil.rmtree(temp_dir)
 
-    def test_subdirectory_empty(self):
-        temp_dir = tempfile.mkdtemp()
-        tempfile.mkdtemp(dir=temp_dir)
+    def test_subdirectory_empty(self, tmp_path):
+        (tmp_path / "subdir").mkdir()
+
         task = FileSensor(
-            task_id='test',
-            filepath=temp_dir,
-            fs_conn_id='fs_default',
+            task_id="test",
+            filepath=tmp_path.as_posix(),
+            fs_conn_id="fs_default",
             dag=self.dag,
             timeout=0,
             poke_interval=1,
@@ -216,4 +221,17 @@ class TestFileSensor(unittest.TestCase):
 
         with pytest.raises(AirflowSensorTimeout):
             task.run(start_date=DEFAULT_DATE, end_date=DEFAULT_DATE, ignore_ti_state=True)
-            shutil.rmtree(temp_dir)
+
+    def test_task_defer(self):
+        task = FileSensor(
+            task_id="test",
+            filepath="temp_dir",
+            fs_conn_id="fs_default",
+            deferrable=True,
+            dag=self.dag,
+        )
+
+        with pytest.raises(TaskDeferred) as exc:
+            task.execute(None)
+
+        assert isinstance(exc.value.trigger, FileTrigger), "Trigger is not a FileTrigger"

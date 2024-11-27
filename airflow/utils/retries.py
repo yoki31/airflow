@@ -14,25 +14,29 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
 import functools
 import logging
 from inspect import signature
-from typing import Any, Optional
+from typing import Callable, TypeVar, overload
 
-import tenacity
-from sqlalchemy.exc import DBAPIError, OperationalError
+from sqlalchemy.exc import DBAPIError
 
 from airflow.configuration import conf
 
-MAX_DB_RETRIES = conf.getint('core', 'max_db_retries', fallback=3)
+F = TypeVar("F", bound=Callable)
+
+MAX_DB_RETRIES = conf.getint("database", "max_db_retries", fallback=3)
 
 
-def run_with_db_retries(max_retries: int = MAX_DB_RETRIES, logger: Optional[logging.Logger] = None, **kwargs):
-    """Return Tenacity Retrying object with project specific default"""
+def run_with_db_retries(max_retries: int = MAX_DB_RETRIES, logger: logging.Logger | None = None, **kwargs):
+    """Return Tenacity Retrying object with project specific default."""
+    import tenacity
+
     # Default kwargs
     retry_kwargs = dict(
-        retry=tenacity.retry_if_exception_type(exception_types=(OperationalError, DBAPIError)),
+        retry=tenacity.retry_if_exception_type(exception_types=(DBAPIError)),
         wait=tenacity.wait_random_exponential(multiplier=0.5, max=5),
         stop=tenacity.stop_after_attempt(max_retries),
         reraise=True,
@@ -44,13 +48,22 @@ def run_with_db_retries(max_retries: int = MAX_DB_RETRIES, logger: Optional[logg
     return tenacity.Retrying(**retry_kwargs)
 
 
-def retry_db_transaction(_func: Any = None, retries: int = MAX_DB_RETRIES, **retry_kwargs):
+@overload
+def retry_db_transaction(*, retries: int = MAX_DB_RETRIES) -> Callable[[F], F]: ...
+
+
+@overload
+def retry_db_transaction(_func: F) -> F: ...
+
+
+def retry_db_transaction(_func: Callable | None = None, *, retries: int = MAX_DB_RETRIES, **retry_kwargs):
     """
-    Decorator to retry Class Methods and Functions in case of ``OperationalError`` from DB.
+    Retry functions in case of ``DBAPIError`` from DB.
+
     It should not be used with ``@provide_session``.
     """
 
-    def retry_decorator(func):
+    def retry_decorator(func: Callable) -> Callable:
         # Get Positional argument for 'session'
         func_params = signature(func).parameters
         try:
@@ -63,8 +76,12 @@ def retry_db_transaction(_func: Any = None, retries: int = MAX_DB_RETRIES, **ret
 
         @functools.wraps(func)
         def wrapped_function(*args, **kwargs):
-            logger = args[0].log if args and hasattr(args[0], "log") else logging.getLogger(func.__module__)
-
+            if args and hasattr(args[0], "logger"):
+                logger = args[0].logger()
+            elif args and hasattr(args[0], "log"):
+                logger = args[0].log
+            else:
+                logger = logging.getLogger(func.__module__)
             # Get session from args or kwargs
             if "session" in kwargs:
                 session = kwargs["session"]
@@ -83,7 +100,7 @@ def retry_db_transaction(_func: Any = None, retries: int = MAX_DB_RETRIES, **ret
                     )
                     try:
                         return func(*args, **kwargs)
-                    except OperationalError:
+                    except DBAPIError:
                         session.rollback()
                         raise
 

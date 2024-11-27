@@ -34,7 +34,8 @@ There are several ways to connect to Databricks using Airflow.
    i.e. add a token to the Airflow connection. This is the recommended method.
 2. Use Databricks login credentials
    i.e. add the username and password used to login to the Databricks account to the Airflow connection.
-   Note that username/password authentication is discouraged and not supported for ``DatabricksSqlOperator``.
+   Note that username/password authentication is discouraged and not supported for
+   :class:`~airflow.providers.databricks.operators.databricks_sql.DatabricksSqlOperator`.
 3. Using Azure Active Directory (AAD) token generated from Azure Service Principal's ID and secret
    (only on Azure Databricks).  Service principal could be defined as a
    `user inside workspace <https://docs.microsoft.com/en-us/azure/databricks/dev-tools/api/latest/aad/service-prin-aad-token#--api-access-for-service-principals-that-are-azure-databricks-workspace-users-and-admins>`_, or `outside of workspace having Owner or Contributor permissions <https://docs.microsoft.com/en-us/azure/databricks/dev-tools/api/latest/aad/service-prin-aad-token#--api-access-for-service-principals-that-are-not-workspace-users>`_
@@ -54,19 +55,26 @@ Host (required)
 
 Login (optional)
     * If authentication with *Databricks login credentials* is used then specify the ``username`` used to login to Databricks.
-    * If *authentication with Azure Service Principal* is used then specify the ID of the Azure Service Principal
+    * If authentication with *Azure Service Principal* is used then specify the ID of the Azure Service Principal
+    * If authentication with *PAT* is used then either leave this field empty or use 'token' as login (both work, the only difference is that if login is empty then token will be sent in request header as Bearer token, if login is 'token' then it will be sent using Basic Auth which is allowed by Databricks API, this may be useful if you plan to reuse this connection with e.g. HttpOperator)
+    * If authentication with *Databricks Service Principal OAuth* is used then specify the ID of the Service Principal (Databricks on AWS)
 
 Password (optional)
-    * If authentication with *Databricks login credentials*  is used then specify the ``password`` used to login to Databricks.
+    * If authentication with *Databricks login credentials* is used then specify the ``password`` used to login to Databricks.
     * If authentication with *Azure Service Principal* is used then specify the secret of the Azure Service Principal
-    * if authentication with *PAT* is used, then specify PAT and use ``token`` as the login (recommended)
+    * If authentication with *PAT* is used, then specify PAT (recommended)
+    * If authentication with *Databricks Service Principal OAuth* is used then specify the secret of the Service Principal (Databricks on AWS)
 
 Extra (optional)
     Specify the extra parameter (as json dictionary) that can be used in the Databricks connection.
 
-    Following parameter should be used if using the *PAT* authentication method:
+    Following parameter could be used if using the *PAT* authentication method:
 
-    * ``token``: Specify PAT to use. Note, the PAT must appear in both the Password field as the token value in Extra.
+    * ``token``: Specify PAT to use. Consider to switch to specification of PAT in the Password field as it's more secure.
+
+    Following parameters are necessary if using authentication with OAuth token for AWS Databricks Service Principal:
+
+    * ``service_principal_oauth``: required boolean flag.  If specified as ``true``, use the Client ID and Client Secret as the Username and Password. See `Authentication using OAuth for service principals <https://docs.databricks.com/en/dev-tools/authentication-oauth.html>`_.
 
     Following parameters are necessary if using authentication with AAD token:
 
@@ -79,10 +87,12 @@ Extra (optional)
 
     * ``use_azure_managed_identity``: required boolean flag to specify if managed identity needs to be used instead of
       service principal
+    * ``use_default_azure_credential``: required boolean flag to specify if the `DefaultAzureCredential` class should be used to retrieve a AAD token. For example, this can be used when authenticating with workload identity within an Azure Kubernetes Service cluster. Note that this option can't be set together with the `use_azure_managed_identity` parameter.
     * ``azure_resource_id``: optional Resource ID of the Azure Databricks workspace (required if managed identity isn't
       a user inside workspace)
 
-    Following parameters could be set when using ``DatabricksSqlOperator``:
+    Following parameters could be set when using
+    :class:`~airflow.providers.databricks.operators.databricks_sql.DatabricksSqlOperator`:
 
     * ``http_path``: optional HTTP path of Databricks SQL endpoint or Databricks cluster. See `documentation <https://docs.databricks.com/dev-tools/python-sql-connector.html#get-started>`_.
     * ``session_configuration``: optional map containing Spark session configuration parameters.

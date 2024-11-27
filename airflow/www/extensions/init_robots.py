@@ -14,6 +14,8 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
+
 import logging
 
 log = logging.getLogger(__name__)
@@ -21,15 +23,17 @@ log = logging.getLogger(__name__)
 
 def init_robots(app):
     """
-    Add X-Robots-Tag header. Use it to avoid search engines indexing airflow. This mitigates some
-    of the risk associated with exposing Airflow to the public internet, however it does not
+    Add X-Robots-Tag header.
+
+    Use it to avoid search engines indexing airflow. This mitigates some of the risk
+    associated with exposing Airflow to the public internet, however it does not
     address the real security risks associated with such a deployment.
 
     See also: https://developers.google.com/search/docs/advanced/robots/robots_meta_tag#xrobotstag
     """
 
     def apply_robot_tag(response):
-        response.headers['X-Robots-Tag'] = 'noindex, nofollow'
+        response.headers["X-Robots-Tag"] = "noindex, nofollow"
         return response
 
     app.after_request(apply_robot_tag)

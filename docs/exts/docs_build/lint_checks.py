@@ -14,13 +14,14 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
 import ast
+import itertools
 import os
 import re
+from collections.abc import Iterable
 from glob import glob
-from itertools import chain
-from typing import Iterable, List, Optional, Set
 
 from docs.exts.docs_build.docs_builder import ALL_PROVIDER_YAMLS
 from docs.exts.docs_build.errors import DocBuildError
@@ -32,7 +33,7 @@ ROOT_PACKAGE_DIR = os.path.join(ROOT_PROJECT_DIR, "airflow")
 DOCS_DIR = os.path.join(ROOT_PROJECT_DIR, "docs")
 
 
-def find_existing_guide_operator_names(src_dir_pattern: str) -> Set[str]:
+def find_existing_guide_operator_names(src_dir_pattern: str) -> set[str]:
     """
     Find names of existing operators.
     :return names of existing operators.
@@ -77,7 +78,7 @@ def _generate_missing_guide_error(path, line_no, operator_name):
     )
 
 
-def check_guide_links_in_operator_descriptions() -> List[DocBuildError]:
+def check_guide_links_in_operator_descriptions() -> list[DocBuildError]:
     """Check if there are links to guides in operator's descriptions."""
     build_errors = []
 
@@ -86,7 +87,7 @@ def check_guide_links_in_operator_descriptions() -> List[DocBuildError]:
             operator_names=find_existing_guide_operator_names(
                 f"{DOCS_DIR}/apache-airflow/howto/operator/**/*.rst"
             ),
-            python_module_paths=chain(
+            python_module_paths=itertools.chain(
                 glob(f"{ROOT_PACKAGE_DIR}/operators/*.py"),
                 glob(f"{ROOT_PACKAGE_DIR}/sensors/*.py"),
             ),
@@ -100,7 +101,7 @@ def check_guide_links_in_operator_descriptions() -> List[DocBuildError]:
         }
 
         # Extract all potential python modules that can contain operators
-        python_module_paths = chain(
+        python_module_paths = itertools.chain(
             glob(f"{provider['package-dir']}/**/operators/*.py", recursive=True),
             glob(f"{provider['package-dir']}/**/sensors/*.py", recursive=True),
             glob(f"{provider['package-dir']}/**/transfers/*.py", recursive=True),
@@ -115,7 +116,7 @@ def check_guide_links_in_operator_descriptions() -> List[DocBuildError]:
     return build_errors
 
 
-def _check_missing_guide_references(operator_names, python_module_paths) -> List[DocBuildError]:
+def _check_missing_guide_references(operator_names, python_module_paths) -> list[DocBuildError]:
     build_errors = []
 
     for py_module_path in python_module_paths:
@@ -150,8 +151,8 @@ def _check_missing_guide_references(operator_names, python_module_paths) -> List
 
 
 def assert_file_not_contains(
-    *, file_path: str, pattern: str, message: Optional[str] = None
-) -> Optional[DocBuildError]:
+    *, file_path: str, pattern: str, message: str | None = None
+) -> DocBuildError | None:
     """
     Asserts that file does not contain the pattern. Return message error if it does.
 
@@ -162,9 +163,7 @@ def assert_file_not_contains(
     return _extract_file_content(file_path, message, pattern, False)
 
 
-def assert_file_contains(
-    *, file_path: str, pattern: str, message: Optional[str] = None
-) -> Optional[DocBuildError]:
+def assert_file_contains(*, file_path: str, pattern: str, message: str | None = None) -> DocBuildError | None:
     """
     Asserts that file does contain the pattern. Return message error if it does not.
 
@@ -175,7 +174,7 @@ def assert_file_contains(
     return _extract_file_content(file_path, message, pattern, True)
 
 
-def _extract_file_content(file_path: str, message: Optional[str], pattern: str, expected_contain: bool):
+def _extract_file_content(file_path: str, message: str | None, pattern: str, expected_contain: bool):
     if not message:
         message = f"Pattern '{pattern}' could not be found in '{file_path}' file."
     with open(file_path, "rb", 0) as doc_file:
@@ -194,7 +193,7 @@ def _extract_file_content(file_path: str, message: Optional[str], pattern: str, 
     return None
 
 
-def filter_file_list_by_pattern(file_paths: Iterable[str], pattern: str) -> List[str]:
+def filter_file_list_by_pattern(file_paths: Iterable[str], pattern: str) -> list[str]:
     """
     Filters file list to those that content matches the pattern
     :param file_paths: file paths to check
@@ -211,7 +210,7 @@ def filter_file_list_by_pattern(file_paths: Iterable[str], pattern: str) -> List
     return output_paths
 
 
-def find_modules(deprecated_only: bool = False) -> Set[str]:
+def find_modules(deprecated_only: bool = False) -> set[str]:
     """
     Finds all modules.
     :param deprecated_only: whether only deprecated modules should be found.
@@ -229,14 +228,14 @@ def find_modules(deprecated_only: bool = False) -> Set[str]:
     return modules_names
 
 
-def check_exampleinclude_for_example_dags() -> List[DocBuildError]:
-    """Checks all exampleincludes for  example dags."""
-    all_docs_files = glob(f"${DOCS_DIR}/**/*.rst", recursive=True)
+def check_exampleinclude_for_example_dags() -> list[DocBuildError]:
+    """Checks all exampleincludes for example dags."""
+    all_docs_files = glob(f"{DOCS_DIR}/**/*.rst", recursive=True)
     build_errors = []
     for doc_file in all_docs_files:
         build_error = assert_file_not_contains(
             file_path=doc_file,
-            pattern=r"literalinclude::.+example_dags",
+            pattern=r"literalinclude::.+(?:example_dags|tests/system/)",
             message=(
                 "literalinclude directive is prohibited for example DAGs. \n"
                 "You should use the exampleinclude directive to include example DAGs."
@@ -247,7 +246,7 @@ def check_exampleinclude_for_example_dags() -> List[DocBuildError]:
     return build_errors
 
 
-def check_enforce_code_block() -> List[DocBuildError]:
+def check_enforce_code_block() -> list[DocBuildError]:
     """Checks all code:: blocks."""
     all_docs_files = glob(f"{DOCS_DIR}/**/*.rst", recursive=True)
     build_errors = []
@@ -265,38 +264,13 @@ def check_enforce_code_block() -> List[DocBuildError]:
     return build_errors
 
 
-def check_example_dags_in_provider_tocs() -> List[DocBuildError]:
-    """Checks that each documentation for provider packages has a link to example DAGs in the TOC."""
-    build_errors = []
-
-    for provider in ALL_PROVIDER_YAMLS:
-        example_dags_dirs = list(glob(f"{provider['package-dir']}/**/example_dags", recursive=True))
-        if not example_dags_dirs:
-            continue
-        doc_file_path = f"{DOCS_DIR}/{provider['package-name']}/index.rst"
-
-        if len(example_dags_dirs) == 1:
-            package_rel_path = os.path.relpath(example_dags_dirs[0], start=ROOT_PROJECT_DIR)
-            github_url = f"https://github.com/apache/airflow/tree/main/{package_rel_path}"
-            expected_text = f"Example DAGs <{github_url}>"
-        else:
-            expected_text = "Example DAGs <example-dags>"
-
-        build_error = assert_file_contains(
-            file_path=doc_file_path,
-            pattern=re.escape(expected_text),
-            message=(
-                f"A link to the example DAGs in table of contents is missing. Can you add it?\n\n"
-                f"    {expected_text}"
-            ),
-        )
-        if build_error:
-            build_errors.append(build_error)
-
-    return build_errors
+def find_example_dags(provider_dir):
+    system_tests_dir = provider_dir.replace(f"{ROOT_PACKAGE_DIR}/", "")
+    yield from glob(f"{provider_dir}/**/*example_dags", recursive=True)
+    yield from glob(f"{ROOT_PROJECT_DIR}/tests/system/{system_tests_dir}/*/", recursive=True)
 
 
-def check_pypi_repository_in_provider_tocs() -> List[DocBuildError]:
+def check_pypi_repository_in_provider_tocs() -> list[DocBuildError]:
     """Checks that each documentation for provider packages has a link to PyPI files in the TOC."""
     build_errors = []
     for provider in ALL_PROVIDER_YAMLS:
@@ -306,7 +280,7 @@ def check_pypi_repository_in_provider_tocs() -> List[DocBuildError]:
             file_path=doc_file_path,
             pattern=re.escape(expected_text),
             message=(
-                f"A link to the PyPI in table of contents is missing. Can you add it?\n\n"
+                f"A link to the PyPI in table of contents is missing. Can you please add it?\n\n"
                 f"    {expected_text}"
             ),
         )
@@ -316,13 +290,12 @@ def check_pypi_repository_in_provider_tocs() -> List[DocBuildError]:
     return build_errors
 
 
-def run_all_check() -> List[DocBuildError]:
+def run_all_check(disable_provider_checks: bool = False) -> list[DocBuildError]:
     """Run all checks from this module"""
     general_errors = []
     general_errors.extend(check_guide_links_in_operator_descriptions())
     general_errors.extend(check_enforce_code_block())
     general_errors.extend(check_exampleinclude_for_example_dags())
-    general_errors.extend(check_example_dags_in_provider_tocs())
-    general_errors.extend(check_pypi_repository_in_provider_tocs())
-
+    if not disable_provider_checks:
+        general_errors.extend(check_pypi_repository_in_provider_tocs())
     return general_errors

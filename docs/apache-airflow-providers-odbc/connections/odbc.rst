@@ -65,8 +65,17 @@ Extra (optional)
         * key-value pairs under ``connect_kwargs`` will be passed onto ``pyodbc.connect`` as kwargs
     - ``sqlalchemy_scheme``
         * This is only used when ``get_uri`` is invoked in
-          :py:meth:`~airflow.hooks.dbapi.DbApiHook.get_sqlalchemy_engine`.  By default, the hook uses
+          :py:meth:`~airflow.providers.common.sql.hooks.sql.DbApiHook.get_sqlalchemy_engine`.  By default, the hook uses
           scheme ``mssql+pyodbc``.  You may pass a string value here to override.
+    - ``driver``
+        * The name of the driver to use on your system.  Note that this is only considered if ``allow_driver_in_extra``
+          is set to True in airflow config section ``providers.odbc`` (by default it is not considered).  Note: if setting
+          this config from env vars, use ``AIRFLOW__PROVIDERS_ODBC__ALLOW_DRIVER_IN_EXTRA=true``.
+
+    .. note::
+        If setting ``allow_driver_extra`` to True, this allows users to set the driver via the Airflow Connection's
+        ``extra`` field.  By default this is not allowed.  If enabling this functionality, you should make sure
+        that you trust the users who can edit connections in the UI to not use it maliciously.
 
     .. note::
         You are responsible for installing an ODBC driver on your system.
@@ -87,7 +96,7 @@ Extra (optional)
 
     .. code-block::
 
-        DRIVER={ODBC Driver 17 for SQL Server};ApplicationIntent=ReadOnly;TrustedConnection=Yes;
+        DRIVER={ODBC Driver 18 for SQL Server};ApplicationIntent=ReadOnly;TrustedConnection=Yes;
 
     See `DSN and Connection String Keywords and Attributes <https://docs.microsoft.com/en-us/sql/connect/odbc/dsn-connection-string-attribute?view=sql-server-ver15>`_
     for more info.

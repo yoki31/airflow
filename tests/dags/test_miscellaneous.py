@@ -15,39 +15,40 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
 """Example DAG demonstrating the usage of the BashOperator."""
 
-from datetime import timedelta
+from __future__ import annotations
 
-from airflow import DAG
-from airflow.operators.bash import BashOperator
-from airflow.operators.dummy import DummyOperator
-from airflow.utils.dates import days_ago
+import datetime
+
+from airflow.models.dag import DAG
+from airflow.operators.empty import EmptyOperator
+
+from tests_common.test_utils.compat import BashOperator
 
 args = {
-    'owner': 'airflow',
+    "owner": "airflow",
 }
 
 dag = DAG(
-    dag_id='miscellaneous_test_dag',
+    dag_id="miscellaneous_test_dag",
     default_args=args,
-    schedule_interval='0 0 * * *',
-    start_date=days_ago(2),
-    dagrun_timeout=timedelta(minutes=60),
-    tags=['example', 'example2'],
+    schedule="0 0 * * *",
+    start_date=datetime.datetime(2022, 1, 1),
+    dagrun_timeout=datetime.timedelta(minutes=60),
+    tags=["example", "example2"],
     params={"example_key": "example_value"},
 )
 
-run_this_last = DummyOperator(
-    task_id='run_this_last',
+run_this_last = EmptyOperator(
+    task_id="run_this_last",
     dag=dag,
 )
 
 # [START howto_operator_bash]
 run_this = BashOperator(
-    task_id='run_after_loop',
-    bash_command='echo 1',
+    task_id="run_after_loop",
+    bash_command="echo 1",
     dag=dag,
 )
 # [END howto_operator_bash]
@@ -56,7 +57,7 @@ run_this >> run_this_last
 
 for i in range(3):
     task = BashOperator(
-        task_id='runme_' + str(i),
+        task_id=f"runme_{i}",
         bash_command='echo "{{ task_instance_key_str }}" && sleep 1',
         dag=dag,
     )
@@ -64,7 +65,7 @@ for i in range(3):
 
 # [START howto_operator_bash_template]
 also_run_this = BashOperator(
-    task_id='also_run_this',
+    task_id="also_run_this",
     bash_command='echo "run_id={{ run_id }} | dag_run={{ dag_run }}"',
     dag=dag,
 )

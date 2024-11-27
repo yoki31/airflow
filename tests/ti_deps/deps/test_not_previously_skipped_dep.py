@@ -15,20 +15,23 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
 import pendulum
 import pytest
 
 from airflow.models import DagRun, TaskInstance
-from airflow.operators.dummy import DummyOperator
-from airflow.operators.python import BranchPythonOperator
+from airflow.operators.empty import EmptyOperator
+from airflow.providers.standard.operators.python import BranchPythonOperator
 from airflow.ti_deps.dep_context import DepContext
 from airflow.ti_deps.deps.not_previously_skipped_dep import NotPreviouslySkippedDep
 from airflow.utils.state import State
 from airflow.utils.types import DagRunType
 
+pytestmark = [pytest.mark.db_test, pytest.mark.skip_if_database_isolation_mode]
 
-@pytest.fixture(autouse=True, scope="function")
+
+@pytest.fixture(autouse=True)
 def clean_db(session):
     yield
     session.query(DagRun).delete()
@@ -42,13 +45,13 @@ def test_no_parent(session, dag_maker):
     start_date = pendulum.datetime(2020, 1, 1)
     with dag_maker(
         "test_test_no_parent_dag",
-        schedule_interval=None,
+        schedule=None,
         start_date=start_date,
         session=session,
     ):
-        op1 = DummyOperator(task_id="op1")
+        op1 = EmptyOperator(task_id="op1")
 
-    (ti1,) = dag_maker.create_dagrun(execution_date=start_date).task_instances
+    (ti1,) = dag_maker.create_dagrun(logical_date=start_date).task_instances
     ti1.refresh_from_task(op1)
 
     dep = NotPreviouslySkippedDep()
@@ -59,17 +62,17 @@ def test_no_parent(session, dag_maker):
 
 def test_no_skipmixin_parent(session, dag_maker):
     """
-    A simple DAG with no branching. Both op1 and op2 are DummyOperator. NotPreviouslySkippedDep is met.
+    A simple DAG with no branching. Both op1 and op2 are EmptyOperator. NotPreviouslySkippedDep is met.
     """
     start_date = pendulum.datetime(2020, 1, 1)
     with dag_maker(
         "test_no_skipmixin_parent_dag",
-        schedule_interval=None,
+        schedule=None,
         start_date=start_date,
         session=session,
     ):
-        op1 = DummyOperator(task_id="op1")
-        op2 = DummyOperator(task_id="op2")
+        op1 = EmptyOperator(task_id="op1")
+        op2 = EmptyOperator(task_id="op2")
         op1 >> op2
 
     _, ti2 = dag_maker.create_dagrun().task_instances
@@ -88,12 +91,12 @@ def test_parent_follow_branch(session, dag_maker):
     start_date = pendulum.datetime(2020, 1, 1)
     with dag_maker(
         "test_parent_follow_branch_dag",
-        schedule_interval=None,
+        schedule=None,
         start_date=start_date,
         session=session,
     ):
         op1 = BranchPythonOperator(task_id="op1", python_callable=lambda: "op2")
-        op2 = DummyOperator(task_id="op2")
+        op2 = EmptyOperator(task_id="op2")
         op1 >> op2
 
     dagrun = dag_maker.create_dagrun(run_type=DagRunType.MANUAL, state=State.RUNNING)
@@ -113,13 +116,13 @@ def test_parent_skip_branch(session, dag_maker):
     start_date = pendulum.datetime(2020, 1, 1)
     with dag_maker(
         "test_parent_skip_branch_dag",
-        schedule_interval=None,
+        schedule=None,
         start_date=start_date,
         session=session,
     ):
         op1 = BranchPythonOperator(task_id="op1", python_callable=lambda: "op3")
-        op2 = DummyOperator(task_id="op2")
-        op3 = DummyOperator(task_id="op3")
+        op2 = EmptyOperator(task_id="op2")
+        op3 = EmptyOperator(task_id="op3")
         op1 >> [op2, op3]
 
     tis = {
@@ -142,13 +145,13 @@ def test_parent_not_executed(session, dag_maker):
     start_date = pendulum.datetime(2020, 1, 1)
     with dag_maker(
         "test_parent_not_executed_dag",
-        schedule_interval=None,
+        schedule=None,
         start_date=start_date,
         session=session,
     ):
         op1 = BranchPythonOperator(task_id="op1", python_callable=lambda: "op3")
-        op2 = DummyOperator(task_id="op2")
-        op3 = DummyOperator(task_id="op3")
+        op2 = EmptyOperator(task_id="op2")
+        op3 = EmptyOperator(task_id="op3")
         op1 >> [op2, op3]
 
     _, ti2, _ = dag_maker.create_dagrun().task_instances

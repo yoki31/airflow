@@ -14,19 +14,28 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
 import shlex
 import subprocess
-from typing import List
 
 
-def run_command(cmd: List[str], *, print_output_on_error: bool = True, return_output: bool = False, **kwargs):
-    print(f"$ {' '.join(shlex.quote(c) for c in cmd)}")
+def run_command(
+    cmd: list[str], *, print_output_on_error: bool = True, return_output: bool = False, check=True, **kwargs
+) -> str | bool:
+    print(f"Running command: {' '.join(shlex.quote(c) for c in cmd)}")
     try:
         if return_output:
             return subprocess.check_output(cmd, **kwargs).decode()
         else:
-            subprocess.run(cmd, check=True, **kwargs)
+            try:
+                result = subprocess.run(cmd, check=check, **kwargs)
+                return result.returncode == 0
+            except FileNotFoundError:
+                if check:
+                    raise
+                else:
+                    return False
     except subprocess.CalledProcessError as ex:
         if print_output_on_error:
             print("========================= OUTPUT start ============================")

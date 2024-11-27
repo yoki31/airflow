@@ -39,13 +39,12 @@ Set values for these fields:
 .. code-block::
 
   Connection Id: "your_conn_id"
-  Extra: {"extra__dataprep__token": "TOKEN",
-          "extra__dataprep__base_url": "https://api.clouddataprep.com"}
+  Extra: {"token": "TOKEN", "base_url": "https://api.clouddataprep.com"}
 
 Prerequisite Tasks
 ^^^^^^^^^^^^^^^^^^
 
-.. include::/operators/_partials/prerequisite_tasks.rst
+.. include:: /operators/_partials/prerequisite_tasks.rst
 
 .. _howto/operator:DataprepRunJobGroupOperator:
 
@@ -60,7 +59,7 @@ To get information about jobs within a Cloud Dataprep job use:
 
 Example usage:
 
-.. exampleinclude:: /../../airflow/providers/google/cloud/example_dags/example_dataprep.py
+.. exampleinclude:: /../../providers/tests/system/google/cloud/dataprep/example_dataprep.py
     :language: python
     :dedent: 4
     :start-after: [START how_to_dataprep_run_job_group_operator]
@@ -78,7 +77,7 @@ To get information about jobs within a Cloud Dataprep job use:
 
 Example usage:
 
-.. exampleinclude:: /../../airflow/providers/google/cloud/example_dags/example_dataprep.py
+.. exampleinclude:: /../../providers/tests/system/google/cloud/dataprep/example_dataprep.py
     :language: python
     :dedent: 4
     :start-after: [START how_to_dataprep_get_jobs_for_job_group_operator]
@@ -97,8 +96,79 @@ To get information about jobs within a Cloud Dataprep job use:
 
 Example usage:
 
-.. exampleinclude:: /../../airflow/providers/google/cloud/example_dags/example_dataprep.py
+.. exampleinclude:: /../../providers/tests/system/google/cloud/dataprep/example_dataprep.py
     :language: python
     :dedent: 4
     :start-after: [START how_to_dataprep_get_job_group_operator]
     :end-before: [END how_to_dataprep_get_job_group_operator]
+
+Copy Flow
+^^^^^^^^^
+
+Operator task is to copy the flow.
+
+To get information about jobs within a Cloud Dataprep job use:
+:class:`~airflow.providers.google.cloud.operators.dataprep.DataprepCopyFlowOperator`
+
+Example usage:
+
+.. exampleinclude:: /../../providers/tests/system/google/cloud/dataprep/example_dataprep.py
+    :language: python
+    :dedent: 4
+    :start-after: [START how_to_dataprep_copy_flow_operator]
+    :end-before: [END how_to_dataprep_copy_flow_operator]
+
+Run Flow
+^^^^^^^^
+
+Operator task is to run the flow.
+A flow is a container for wrangling logic which contains
+imported datasets, recipe, output objects, and References.
+
+To get information about jobs within a Cloud Dataprep job use:
+:class:`~airflow.providers.google.cloud.operators.dataprep.DataprepRunFlowOperator`
+
+Example usage:
+
+.. exampleinclude:: /../../providers/tests/system/google/cloud/dataprep/example_dataprep.py
+    :language: python
+    :dedent: 4
+    :start-after: [START how_to_dataprep_dataprep_run_flow_operator]
+    :end-before: [END how_to_dataprep_dataprep_run_flow_operator]
+
+Delete flow
+^^^^^^^^^^^
+
+Operator task is to delete the flow.
+A flow is a container for wrangling logic which contains
+imported datasets, recipe, output objects, and References.
+
+To get information about jobs within a Cloud Dataprep job use:
+:class:`~airflow.providers.google.cloud.operators.dataprep.DataprepDeleteFlowOperator`
+
+Example usage:
+
+.. exampleinclude:: /../../providers/tests/system/google/cloud/dataprep/example_dataprep.py
+    :language: python
+    :dedent: 4
+    :start-after: [START how_to_dataprep_delete_flow_operator]
+    :end-before: [END how_to_dataprep_delete_flow_operator]
+
+
+Check if Job Group is finished
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Sensor task is to tell the system when started job group is finished
+no matter successfully or not.
+A job group is a job that is executed from a specific node in a flow.
+
+To get information about jobs within a Cloud Dataprep job use:
+:class:`~airflow.providers.google.cloud.sensors.dataprep.DataprepJobGroupIsFinishedSensor`
+
+Example usage:
+
+.. exampleinclude:: /../../providers/tests/system/google/cloud/dataprep/example_dataprep.py
+    :language: python
+    :dedent: 4
+    :start-after: [START how_to_dataprep_job_group_finished_sensor]
+    :end-before: [END how_to_dataprep_job_group_finished_sensor]

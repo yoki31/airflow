@@ -15,26 +15,39 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
+
+import itertools
 import re
-from itertools import product
+from typing import TYPE_CHECKING
 
 import pytest
 
-from airflow import AirflowException
+from airflow.exceptions import AirflowException
+from airflow.jobs.base_job_runner import BaseJobRunner
 from airflow.utils import helpers, timezone
 from airflow.utils.helpers import (
+    at_most_one,
     build_airflow_url_with_query,
     exactly_one,
     merge_dicts,
     prune_dict,
     validate_group_key,
+    validate_instance_args,
     validate_key,
 )
-from tests.test_utils.config import conf_vars
-from tests.test_utils.db import clear_db_dags, clear_db_runs
+from airflow.utils.types import NOTSET
+
+from tests_common.test_utils.config import conf_vars
+from tests_common.test_utils.db import clear_db_dags, clear_db_runs
+
+if TYPE_CHECKING:
+    from airflow.jobs.job import Job
+
+pytestmark = pytest.mark.skip_if_database_isolation_mode
 
 
-@pytest.fixture()
+@pytest.fixture
 def clear_db():
     clear_db_runs()
     clear_db_dags()
@@ -44,17 +57,18 @@ def clear_db():
 
 
 class TestHelpers:
+    @pytest.mark.db_test
     @pytest.mark.usefixtures("clear_db")
     def test_render_log_filename(self, create_task_instance):
         try_number = 1
-        dag_id = 'test_render_log_filename_dag'
-        task_id = 'test_render_log_filename_task'
-        execution_date = timezone.datetime(2016, 1, 1)
+        dag_id = "test_render_log_filename_dag"
+        task_id = "test_render_log_filename_task"
+        logical_date = timezone.datetime(2016, 1, 1)
 
-        ti = create_task_instance(dag_id=dag_id, task_id=task_id, execution_date=execution_date)
+        ti = create_task_instance(dag_id=dag_id, task_id=task_id, logical_date=logical_date)
         filename_template = "{{ ti.dag_id }}/{{ ti.task_id }}/{{ ts }}/{{ try_number }}.log"
 
-        ts = ti.get_template_context()['ts']
+        ts = ti.get_template_context()["ts"]
         expected_filename = f"{dag_id}/{task_id}/{ts}/{try_number}.log"
 
         rendered_filename = helpers.render_log_filename(ti, try_number, filename_template)
@@ -73,9 +87,9 @@ class TestHelpers:
         assert list(helpers.chunks([1, 2, 3], 2)) == [[1, 2], [3]]
 
     def test_reduce_in_chunks(self):
-        assert helpers.reduce_in_chunks(lambda x, y: x + [y], [1, 2, 3, 4, 5], []) == [[1, 2, 3, 4, 5]]
+        assert helpers.reduce_in_chunks(lambda x, y: [*x, y], [1, 2, 3, 4, 5], []) == [[1, 2, 3, 4, 5]]
 
-        assert helpers.reduce_in_chunks(lambda x, y: x + [y], [1, 2, 3, 4, 5], [], 2) == [[1, 2], [3, 4], [5]]
+        assert helpers.reduce_in_chunks(lambda x, y: [*x, y], [1, 2, 3, 4, 5], [], 2) == [[1, 2], [3, 4], [5]]
 
         assert helpers.reduce_in_chunks(lambda x, y: x + y[0] * y[1], [1, 2, 3, 4], 0, 2) == 14
 
@@ -83,8 +97,8 @@ class TestHelpers:
         assert not helpers.is_container("a string is not a container")
         assert helpers.is_container(["a", "list", "is", "a", "container"])
 
-        assert helpers.is_container(['test_list'])
-        assert not helpers.is_container('test_str_not_iterable')
+        assert helpers.is_container(["test_list"])
+        assert not helpers.is_container("test_str_not_iterable")
         # Pass an object that is not iter nor a string.
         assert not helpers.is_container(10)
 
@@ -100,56 +114,57 @@ class TestHelpers:
         )
 
     def test_as_tuple_iter(self):
-        test_list = ['test_str']
+        test_list = ["test_str"]
         as_tup = helpers.as_tuple(test_list)
         assert tuple(test_list) == as_tup
 
     def test_as_tuple_no_iter(self):
-        test_str = 'test_str'
+        test_str = "test_str"
         as_tup = helpers.as_tuple(test_str)
         assert (test_str,) == as_tup
 
     def test_convert_camel_to_snake(self):
-        assert helpers.convert_camel_to_snake('LocalTaskJob') == 'local_task_job'
-        assert helpers.convert_camel_to_snake('somethingVeryRandom') == 'something_very_random'
+        assert helpers.convert_camel_to_snake("LocalTaskJob") == "local_task_job"
+        assert helpers.convert_camel_to_snake("somethingVeryRandom") == "something_very_random"
 
     def test_merge_dicts(self):
         """
         Test _merge method from JSONFormatter
         """
-        dict1 = {'a': 1, 'b': 2, 'c': 3}
-        dict2 = {'a': 1, 'b': 3, 'd': 42}
+        dict1 = {"a": 1, "b": 2, "c": 3}
+        dict2 = {"a": 1, "b": 3, "d": 42}
         merged = merge_dicts(dict1, dict2)
-        assert merged == {'a': 1, 'b': 3, 'c': 3, 'd': 42}
+        assert merged == {"a": 1, "b": 3, "c": 3, "d": 42}
 
     def test_merge_dicts_recursive_overlap_l1(self):
         """
         Test merge_dicts with recursive dict; one level of nesting
         """
-        dict1 = {'a': 1, 'r': {'a': 1, 'b': 2}}
-        dict2 = {'a': 1, 'r': {'c': 3, 'b': 0}}
+        dict1 = {"a": 1, "r": {"a": 1, "b": 2}}
+        dict2 = {"a": 1, "r": {"c": 3, "b": 0}}
         merged = merge_dicts(dict1, dict2)
-        assert merged == {'a': 1, 'r': {'a': 1, 'b': 0, 'c': 3}}
+        assert merged == {"a": 1, "r": {"a": 1, "b": 0, "c": 3}}
 
     def test_merge_dicts_recursive_overlap_l2(self):
         """
         Test merge_dicts with recursive dict; two levels of nesting
         """
 
-        dict1 = {'a': 1, 'r': {'a': 1, 'b': {'a': 1}}}
-        dict2 = {'a': 1, 'r': {'c': 3, 'b': {'b': 1}}}
+        dict1 = {"a": 1, "r": {"a": 1, "b": {"a": 1}}}
+        dict2 = {"a": 1, "r": {"c": 3, "b": {"b": 1}}}
         merged = merge_dicts(dict1, dict2)
-        assert merged == {'a': 1, 'r': {'a': 1, 'b': {'a': 1, 'b': 1}, 'c': 3}}
+        assert merged == {"a": 1, "r": {"a": 1, "b": {"a": 1, "b": 1}, "c": 3}}
 
     def test_merge_dicts_recursive_right_only(self):
         """
         Test merge_dicts with recursive when dict1 doesn't have any nested dict
         """
-        dict1 = {'a': 1}
-        dict2 = {'a': 1, 'r': {'c': 3, 'b': 0}}
+        dict1 = {"a": 1}
+        dict2 = {"a": 1, "r": {"c": 3, "b": 0}}
         merged = merge_dicts(dict1, dict2)
-        assert merged == {'a': 1, 'r': {'b': 0, 'c': 3}}
+        assert merged == {"a": 1, "r": {"b": 0, "c": 3}}
 
+    @pytest.mark.db_test
     @conf_vars(
         {
             ("webserver", "dag_default_view"): "graph",
@@ -188,7 +203,7 @@ class TestHelpers:
                 "characters, dashes, dots and underscores exclusively",
                 AirflowException,
             ),
-            (' ' * 251, "The key has to be less than 250 characters", AirflowException),
+            (" " * 251, f"The key: {' ' * 251} has to be less than 250 characters", AirflowException),
         ],
     )
     def test_validate_key(self, key_id, message, exception):
@@ -229,7 +244,7 @@ class TestHelpers:
                 "characters, dashes and underscores exclusively",
                 AirflowException,
             ),
-            (' ' * 201, "The key has to be less than 200 characters", AirflowException),
+            (" " * 201, "The key has to be less than 200 characters", AirflowException),
         ],
     )
     def test_validate_group_key(self, key_id, message, exception):
@@ -250,44 +265,130 @@ class TestHelpers:
 
         def assert_exactly_one(true=0, truthy=0, false=0, falsy=0):
             sample = []
-            for truth_value, num in [(True, true), (False, false), ('a', truthy), ('', falsy)]:
+            for truth_value, num in [(True, true), (False, false), ("a", truthy), ("", falsy)]:
                 if num:
                     sample.extend([truth_value] * num)
             if sample:
                 expected = True if true + truthy == 1 else False
                 assert exactly_one(*sample) is expected
 
-        for row in product(range(4), range(4), range(4), range(4)):
+        for row in itertools.product(range(4), repeat=4):
             assert_exactly_one(*row)
 
     def test_exactly_one_should_fail(self):
         with pytest.raises(ValueError):
             exactly_one([True, False])
 
+    def test_at_most_one(self):
+        """
+        Checks that when we set ``true_count`` elements to "truthy", and others to "falsy",
+        we get the expected return.
+        We check for both True / False, and truthy / falsy values 'a' and '', and verify that
+        they can safely be used in any combination.
+        NOTSET values should be ignored.
+        """
+
+        def assert_at_most_one(true=0, truthy=0, false=0, falsy=0, notset=0):
+            sample = []
+            for truth_value, num in [
+                (True, true),
+                (False, false),
+                ("a", truthy),
+                ("", falsy),
+                (NOTSET, notset),
+            ]:
+                if num:
+                    sample.extend([truth_value] * num)
+            if sample:
+                expected = True if true + truthy in (0, 1) else False
+                assert at_most_one(*sample) is expected
+
+        for row in itertools.product(range(4), repeat=4):
+            print(row)
+            assert_at_most_one(*row)
+
     @pytest.mark.parametrize(
-        'mode, expected',
+        "mode, expected",
         [
             (
-                'strict',
+                "strict",
                 {
-                    'b': '',
-                    'c': {'b': '', 'c': 'hi', 'd': ['', 0, '1']},
-                    'd': ['', 0, '1'],
-                    'e': ['', 0, {'b': '', 'c': 'hi', 'd': ['', 0, '1']}, ['', 0, '1'], ['']],
+                    "b": "",
+                    "c": {"b": "", "c": "hi", "d": ["", 0, "1"]},
+                    "d": ["", 0, "1"],
+                    "e": ["", 0, {"b": "", "c": "hi", "d": ["", 0, "1"]}, ["", 0, "1"], [""]],
+                    "f": {},
+                    "g": [""],
                 },
             ),
             (
-                'truthy',
+                "truthy",
                 {
-                    'c': {'c': 'hi', 'd': ['1']},
-                    'd': ['1'],
-                    'e': [{'c': 'hi', 'd': ['1']}, ['1']],
+                    "c": {"c": "hi", "d": ["1"]},
+                    "d": ["1"],
+                    "e": [{"c": "hi", "d": ["1"]}, ["1"]],
                 },
             ),
         ],
     )
     def test_prune_dict(self, mode, expected):
-        l1 = ['', 0, '1', None]
-        d1 = {'a': None, 'b': '', 'c': 'hi', 'd': l1}
-        d2 = {'a': None, 'b': '', 'c': d1, 'd': l1, 'e': [None, '', 0, d1, l1, ['']]}
+        l1 = ["", 0, "1", None]
+        d1 = {"a": None, "b": "", "c": "hi", "d": l1}
+        d2 = {"a": None, "b": "", "c": d1, "d": l1, "e": [None, "", 0, d1, l1, [""]], "f": {}, "g": [""]}
         assert prune_dict(d2, mode=mode) == expected
+
+
+class MockJobRunner(BaseJobRunner):
+    job_type = "MockJob"
+
+    def __init__(self, job: Job, func=None):
+        super().__init__(job)
+        self.job = job
+        self.job.job_type = self.job_type
+        self.func = func
+
+    def _execute(self):
+        if self.func is not None:
+            return self.func()
+        return None
+
+
+class SchedulerJobRunner(MockJobRunner):
+    job_type = "SchedulerJob"
+
+
+class TriggererJobRunner(MockJobRunner):
+    job_type = "TriggererJob"
+
+
+class ClassToValidateArgs:
+    def __init__(self, name, age, active):
+        self.name = name
+        self.age = age
+        self.active = active
+
+
+# Edge cases
+@pytest.mark.parametrize(
+    "instance, expected_arg_types",
+    [
+        (ClassToValidateArgs("Alice", 30, None), {"name": str, "age": int, "active": bool}),
+        (ClassToValidateArgs(None, 25, True), {"name": str, "age": int, "active": bool}),
+    ],
+)
+def test_validate_instance_args_raises_no_error(instance, expected_arg_types):
+    validate_instance_args(instance, expected_arg_types)
+
+
+# Error cases
+@pytest.mark.parametrize(
+    "instance, expected_arg_types",
+    [
+        (ClassToValidateArgs("Alice", "thirty", True), {"name": str, "age": int, "active": bool}),
+        (ClassToValidateArgs("Bob", 25, "yes"), {"name": str, "age": int, "active": bool}),
+        (ClassToValidateArgs(123, 25, True), {"name": str, "age": int, "active": bool}),
+    ],
+)
+def test_validate_instance_args_raises_error(instance, expected_arg_types):
+    with pytest.raises(TypeError):
+        validate_instance_args(instance, expected_arg_types)

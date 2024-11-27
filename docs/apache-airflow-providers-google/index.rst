@@ -18,10 +18,18 @@
 ``apache-airflow-providers-google``
 ===================================
 
-Content
--------
 
 .. toctree::
+    :hidden:
+    :maxdepth: 1
+    :caption: Basics
+
+    Home <self>
+    Changelog <changelog>
+    Security <security>
+
+.. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Guides
 
@@ -30,15 +38,24 @@ Content
     Secrets backends <secrets-backends/google-cloud-secret-manager-backend>
     API Authentication backend <api-auth-backend/google-openid>
     Operators <operators/index>
+    Sensors <sensors/index>
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: References
 
     Python API <_api/airflow/providers/google/index>
-    Configuration <configurations-ref>
 
 .. toctree::
+    :hidden:
+    :maxdepth: 1
+    :caption: System tests
+
+    System Tests <_api/tests/system/google/index>
+
+.. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Resources
 
@@ -50,13 +67,14 @@ Content
 
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Commits
 
     Detailed list of commits <commits>
 
 
-Package apache-airflow-providers-google
+apache-airflow-providers-google package
 ------------------------------------------------------
 
 Google services including:
@@ -66,74 +84,100 @@ Google services including:
   - `Google Firebase <https://firebase.google.com/>`__
   - `Google LevelDB <https://github.com/google/leveldb/>`__
   - `Google Marketing Platform <https://marketingplatform.google.com/>`__
-  - `Google Workspace <https://workspace.google.pl/>`__ (formerly Google Suite)
+  - `Google Workspace <https://workspace.google.com/>`__ (formerly Google Suite)
 
 
-Release: 6.6.0
+Release: 11.0.0
 
 Provider package
 ----------------
 
-This is a provider package for ``google`` provider. All classes for this provider package
-are in ``airflow.providers.google`` python package.
+This package is for the ``google`` provider.
+All classes for this package are included in the ``airflow.providers.google`` python package.
 
 Installation
 ------------
 
-You can install this package on top of an existing Airflow 2.1+ installation via
-``pip install apache-airflow-providers-google``
+You can install this package on top of an existing Airflow 2 installation via
+``pip install apache-airflow-providers-google``.
+For the minimum Airflow version supported, see ``Requirements`` below.
 
-PIP requirements
-----------------
+Requirements
+------------
 
-======================================  ====================
-PIP package                             Version required
-======================================  ====================
-``apache-airflow``                      ``>=2.1.0``
-``PyOpenSSL``
-``google-ads``                          ``>=12.0.0,<14.0.1``
-``google-api-core``                     ``>=1.25.1,<3.0.0``
-``google-api-python-client``            ``>=1.6.0,<2.0.0``
-``google-auth-httplib2``                ``>=0.0.1``
-``google-auth``                         ``>=1.0.0``
-``google-cloud-aiplatform``             ``>=1.7.1,<2.0.0``
-``google-cloud-automl``                 ``>=2.1.0``
-``google-cloud-bigquery-datatransfer``  ``>=3.0.0``
-``google-cloud-bigtable``               ``>=1.0.0,<2.0.0``
-``google-cloud-build``                  ``>=3.0.0``
-``google-cloud-container``              ``>=0.1.1,<2.0.0``
-``google-cloud-datacatalog``            ``>=3.0.0``
-``google-cloud-dataplex``               ``>=0.1.0``
-``google-cloud-dataproc-metastore``     ``>=1.2.0,<2.0.0``
-``google-cloud-dataproc``               ``>=3.1.0``
-``google-cloud-dlp``                    ``>=0.11.0,<2.0.0``
-``google-cloud-kms``                    ``>=2.0.0``
-``google-cloud-language``               ``>=1.1.1,<2.0.0``
-``google-cloud-logging``                ``>=2.1.1``
-``google-cloud-memcache``               ``>=0.2.0``
-``google-cloud-monitoring``             ``>=2.0.0``
-``google-cloud-orchestration-airflow``  ``>=1.0.0,<2.0.0``
-``google-cloud-os-login``               ``>=2.0.0``
-``google-cloud-pubsub``                 ``>=2.0.0``
-``google-cloud-redis``                  ``>=2.0.0``
-``google-cloud-secret-manager``         ``>=0.2.0,<2.0.0``
-``google-cloud-spanner``                ``>=1.10.0,<2.0.0``
-``google-cloud-speech``                 ``>=0.36.3,<2.0.0``
-``google-cloud-storage``                ``>=1.30,<2.0.0``
-``google-cloud-tasks``                  ``>=2.0.0``
-``google-cloud-texttospeech``           ``>=0.4.0,<2.0.0``
-``google-cloud-translate``              ``>=1.5.0,<2.0.0``
-``google-cloud-videointelligence``      ``>=1.7.0,<2.0.0``
-``google-cloud-vision``                 ``>=0.35.2,<2.0.0``
-``google-cloud-workflows``              ``>=0.1.0,<2.0.0``
-``grpcio-gcp``                          ``>=0.2.2``
-``httpx``
-``json-merge-patch``                    ``>=0.2``
-``looker-sdk``                          ``>=22.2.0``
-``pandas-gbq``
-``pandas``                              ``>=0.17.1, <1.4``
-``sqlalchemy-bigquery``                 ``>=1.2.1``
-======================================  ====================
+The minimum Apache Airflow version supported by this provider package is ``2.8.0``.
+
+==========================================  =========================================
+PIP package                                 Version required
+==========================================  =========================================
+``apache-airflow``                          ``>=2.8.0``
+``apache-airflow-providers-common-compat``  ``>=1.2.1``
+``apache-airflow-providers-common-sql``     ``>=1.20.0``
+``asgiref``                                 ``>=3.5.2``
+``dill``                                    ``>=0.2.3``
+``gcloud-aio-auth``                         ``>=5.2.0``
+``gcloud-aio-bigquery``                     ``>=6.1.2``
+``gcloud-aio-storage``                      ``>=9.0.0``
+``gcsfs``                                   ``>=2023.10.0``
+``google-ads``                              ``>=25.1.0``
+``google-analytics-admin``                  ``>=0.9.0``
+``google-api-core``                         ``>=2.11.0,!=2.16.0,!=2.18.0``
+``google-api-python-client``                ``>=2.0.2``
+``google-auth``                             ``>=2.29.0``
+``google-auth-httplib2``                    ``>=0.0.1``
+``google-cloud-aiplatform``                 ``>=1.70.0``
+``google-cloud-automl``                     ``>=2.12.0``
+``google-cloud-bigquery``                   ``!=3.21.*,!=3.22.0,!=3.23.*,>=3.4.0``
+``google-cloud-bigquery-datatransfer``      ``>=3.13.0``
+``google-cloud-bigtable``                   ``>=2.17.0``
+``google-cloud-build``                      ``>=3.22.0``
+``google-cloud-compute``                    ``>=1.10.0``
+``google-cloud-container``                  ``>=2.17.4``
+``google-cloud-datacatalog``                ``>=3.23.0``
+``google-cloud-dataflow-client``            ``>=0.8.6``
+``google-cloud-dataform``                   ``>=0.5.0``
+``google-cloud-dataplex``                   ``>=1.10.0``
+``google-cloud-dataproc``                   ``>=5.12.0``
+``google-cloud-dataproc-metastore``         ``>=1.12.0``
+``google-cloud-dlp``                        ``>=3.12.0``
+``google-cloud-kms``                        ``>=2.15.0``
+``google-cloud-language``                   ``>=2.9.0``
+``google-cloud-logging``                    ``>=3.5.0``
+``google-cloud-memcache``                   ``>=1.7.0``
+``google-cloud-monitoring``                 ``>=2.18.0``
+``google-cloud-orchestration-airflow``      ``>=1.10.0``
+``google-cloud-os-login``                   ``>=2.9.1``
+``google-cloud-pubsub``                     ``>=2.19.0``
+``google-cloud-redis``                      ``>=2.12.0``
+``google-cloud-secret-manager``             ``>=2.16.0``
+``google-cloud-spanner``                    ``>=3.11.1,!=3.49.0``
+``google-cloud-speech``                     ``>=2.18.0``
+``google-cloud-storage``                    ``>=2.7.0``
+``google-cloud-storage-transfer``           ``>=1.4.1``
+``google-cloud-tasks``                      ``>=2.13.0``
+``google-cloud-texttospeech``               ``>=2.14.1``
+``google-cloud-translate``                  ``>=3.16.0``
+``google-cloud-videointelligence``          ``>=2.11.0``
+``google-cloud-vision``                     ``>=3.4.0``
+``google-cloud-workflows``                  ``>=1.10.0``
+``google-cloud-run``                        ``>=0.10.0``
+``google-cloud-batch``                      ``>=0.13.0``
+``grpcio-gcp``                              ``>=0.2.2``
+``httpx``                                   ``>=0.25.0``
+``json-merge-patch``                        ``>=0.2``
+``looker-sdk``                              ``>=22.4.0,!=24.18.0``
+``pandas-gbq``                              ``>=0.7.0``
+``pandas``                                  ``>=2.1.2,<2.2; python_version >= "3.9"``
+``pandas``                                  ``>=1.5.3,<2.2; python_version < "3.9"``
+``proto-plus``                              ``>=1.19.6``
+``pyarrow``                                 ``>=14.0.1``
+``python-slugify``                          ``>=7.0.0``
+``PyOpenSSL``                               ``>=23.0.0``
+``sqlalchemy-bigquery``                     ``>=1.2.1``
+``sqlalchemy-spanner``                      ``>=1.6.2``
+``tenacity``                                ``>=8.1.0``
+``immutabledict``                           ``>=4.2.0``
+==========================================  =========================================
 
 Cross provider package dependencies
 -----------------------------------
@@ -155,10 +199,13 @@ Dependent package                                                               
 `apache-airflow-providers-apache-beam <https://airflow.apache.org/docs/apache-airflow-providers-apache-beam>`_            ``apache.beam``
 `apache-airflow-providers-apache-cassandra <https://airflow.apache.org/docs/apache-airflow-providers-apache-cassandra>`_  ``apache.cassandra``
 `apache-airflow-providers-cncf-kubernetes <https://airflow.apache.org/docs/apache-airflow-providers-cncf-kubernetes>`_    ``cncf.kubernetes``
+`apache-airflow-providers-common-compat <https://airflow.apache.org/docs/apache-airflow-providers-common-compat>`_        ``common.compat``
+`apache-airflow-providers-common-sql <https://airflow.apache.org/docs/apache-airflow-providers-common-sql>`_              ``common.sql``
 `apache-airflow-providers-facebook <https://airflow.apache.org/docs/apache-airflow-providers-facebook>`_                  ``facebook``
 `apache-airflow-providers-microsoft-azure <https://airflow.apache.org/docs/apache-airflow-providers-microsoft-azure>`_    ``microsoft.azure``
 `apache-airflow-providers-microsoft-mssql <https://airflow.apache.org/docs/apache-airflow-providers-microsoft-mssql>`_    ``microsoft.mssql``
 `apache-airflow-providers-mysql <https://airflow.apache.org/docs/apache-airflow-providers-mysql>`_                        ``mysql``
+`apache-airflow-providers-openlineage <https://airflow.apache.org/docs/apache-airflow-providers-openlineage>`_            ``openlineage``
 `apache-airflow-providers-oracle <https://airflow.apache.org/docs/apache-airflow-providers-oracle>`_                      ``oracle``
 `apache-airflow-providers-postgres <https://airflow.apache.org/docs/apache-airflow-providers-postgres>`_                  ``postgres``
 `apache-airflow-providers-presto <https://airflow.apache.org/docs/apache-airflow-providers-presto>`_                      ``presto``
@@ -174,7 +221,5 @@ Downloading official packages
 You can download officially released packages and verify their checksums and signatures from the
 `Official Apache Download site <https://downloads.apache.org/airflow/providers/>`_
 
-* `The apache-airflow-providers-google 6.6.0 sdist package <https://downloads.apache.org/airflow/providers/apache-airflow-providers-google-6.6.0.tar.gz>`_ (`asc <https://downloads.apache.org/airflow/providers/apache-airflow-providers-google-6.6.0.tar.gz.asc>`__, `sha512 <https://downloads.apache.org/airflow/providers/apache-airflow-providers-google-6.6.0.tar.gz.sha512>`__)
-* `The apache-airflow-providers-google 6.6.0 wheel package <https://downloads.apache.org/airflow/providers/apache_airflow_providers_google-6.6.0-py3-none-any.whl>`_ (`asc <https://downloads.apache.org/airflow/providers/apache_airflow_providers_google-6.6.0-py3-none-any.whl.asc>`__, `sha512 <https://downloads.apache.org/airflow/providers/apache_airflow_providers_google-6.6.0-py3-none-any.whl.sha512>`__)
-
-.. include:: ../../airflow/providers/google/CHANGELOG.rst
+* `The apache-airflow-providers-google 11.0.0 sdist package <https://downloads.apache.org/airflow/providers/apache_airflow_providers_google-11.0.0.tar.gz>`_ (`asc <https://downloads.apache.org/airflow/providers/apache_airflow_providers_google-11.0.0.tar.gz.asc>`__, `sha512 <https://downloads.apache.org/airflow/providers/apache_airflow_providers_google-11.0.0.tar.gz.sha512>`__)
+* `The apache-airflow-providers-google 11.0.0 wheel package <https://downloads.apache.org/airflow/providers/apache_airflow_providers_google-11.0.0-py3-none-any.whl>`_ (`asc <https://downloads.apache.org/airflow/providers/apache_airflow_providers_google-11.0.0-py3-none-any.whl.asc>`__, `sha512 <https://downloads.apache.org/airflow/providers/apache_airflow_providers_google-11.0.0-py3-none-any.whl.sha512>`__)

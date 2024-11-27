@@ -15,11 +15,12 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
 from airflow.ti_deps.deps.base_ti_dep import BaseTIDep
 from airflow.utils import timezone
 from airflow.utils.session import provide_session
-from airflow.utils.state import State
+from airflow.utils.state import TaskInstanceState
 
 
 class NotInRetryPeriodDep(BaseTIDep):
@@ -37,7 +38,7 @@ class NotInRetryPeriodDep(BaseTIDep):
             )
             return
 
-        if ti.state != State.UP_FOR_RETRY:
+        if ti.state != TaskInstanceState.UP_FOR_RETRY:
             yield self._passing_status(reason="The task instance was not marked for retrying.")
             return
 

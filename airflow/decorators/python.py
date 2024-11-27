@@ -14,11 +14,16 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
-from typing import Callable, Optional, Sequence, TypeVar
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Callable
 
-from airflow.decorators.base import DecoratedOperator, TaskDecorator, task_decorator_factory
-from airflow.operators.python import PythonOperator
+from airflow.decorators.base import DecoratedOperator, task_decorator_factory
+from airflow.providers.standard.operators.python import PythonOperator
+
+if TYPE_CHECKING:
+    from airflow.decorators.base import TaskDecorator
 
 
 class _PythonDecoratedOperator(DecoratedOperator, PythonOperator):
@@ -34,12 +39,10 @@ class _PythonDecoratedOperator(DecoratedOperator, PythonOperator):
         multiple XCom values. Dict will unroll to XCom values with its keys as XCom keys. Defaults to False.
     """
 
-    template_fields: Sequence[str] = ('op_args', 'op_kwargs')
-    template_fields_renderers = {"op_args": "py", "op_kwargs": "py"}
+    template_fields: Sequence[str] = ("templates_dict", "op_args", "op_kwargs")
+    template_fields_renderers = {"templates_dict": "json", "op_args": "py", "op_kwargs": "py"}
 
-    # since we won't mutate the arguments, we should just do the shallow copy
-    # there are some cases we can't deepcopy the objects (e.g protobuf).
-    shallow_copy_attrs: Sequence[str] = ('python_callable',)
+    custom_operator_name: str = "@task"
 
     def __init__(self, *, python_callable, op_args, op_kwargs, **kwargs) -> None:
         kwargs_to_upstream = {
@@ -56,15 +59,13 @@ class _PythonDecoratedOperator(DecoratedOperator, PythonOperator):
         )
 
 
-T = TypeVar("T", bound=Callable)
-
-
 def python_task(
-    python_callable: Optional[Callable] = None,
-    multiple_outputs: Optional[bool] = None,
+    python_callable: Callable | None = None,
+    multiple_outputs: bool | None = None,
     **kwargs,
 ) -> TaskDecorator:
-    """Wraps a function into an Airflow operator.
+    """
+    Wrap a function into an Airflow operator.
 
     Accepts kwargs for operator kwarg. Can be reused in a single DAG.
 

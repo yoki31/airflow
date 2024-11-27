@@ -19,18 +19,53 @@
  * under the License.
  */
 
-import '@testing-library/jest-dom';
+import "@testing-library/jest-dom";
+import axios from "axios";
+import { setLogger } from "react-query";
+import "jest-canvas-mock";
 
-// Mock a global object we use across the app
+// eslint-disable-next-line import/no-extraneous-dependencies
+import moment from "moment-timezone";
+
+axios.defaults.adapter = require("axios/lib/adapters/http");
+
+axios.interceptors.response.use((res) => res.data || res);
+
+setLogger({
+  /* eslint-disable no-console */
+  log: console.log,
+  warn: console.warn,
+  /* eslint-enable no-console */
+  // ✅ no more errors on the console
+  error: () => {},
+});
+
+// Mock global objects we use across the app
 global.stateColors = {
-  deferred: 'mediumpurple',
-  failed: 'red',
-  queued: 'gray',
-  running: 'lime',
-  scheduled: 'tan',
-  skipped: 'pink',
-  success: 'green',
-  up_for_reschedule: 'turquoise',
-  up_for_retry: 'gold',
-  upstream_failed: 'orange',
+  deferred: "mediumpurple",
+  failed: "red",
+  queued: "gray",
+  removed: "lightgrey",
+  restarting: "violet",
+  running: "lime",
+  scheduled: "tan",
+  skipped: "hotpink",
+  success: "green",
+  up_for_reschedule: "turquoise",
+  up_for_retry: "gold",
+  upstream_failed: "orange",
 };
+
+global.defaultDagRunDisplayNumber = 245;
+
+global.filtersOptions = {
+  // Must stay in sync with airflow/www/static/js/types/index.ts
+  dagStates: ["success", "running", "queued", "failed"],
+  runTypes: ["manual", "backfill", "scheduled", "asset_triggered"],
+};
+
+global.moment = moment;
+
+global.standaloneDagProcessor = true;
+
+global.autoRefreshInterval = undefined;

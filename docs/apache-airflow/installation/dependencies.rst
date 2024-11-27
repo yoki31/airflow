@@ -30,7 +30,7 @@ yum package, or whatever equivalent applies on the distribution you are using.
 Most of the extra dependencies are linked to a corresponding provider package. For example "amazon" extra
 has a corresponding ``apache-airflow-providers-amazon`` provider package to be installed. When you install
 Airflow with such extras, the necessary provider packages are installed automatically (latest versions from
-PyPI for those packages). However you can freely upgrade and install provider packages independently from
+PyPI for those packages). However, you can freely upgrade and install provider packages independently from
 the main Airflow installation.
 
 For the list of the extras and what they enable, see: :doc:`/extra-packages-ref`.
@@ -60,7 +60,7 @@ packages, but not all optional features of Apache Airflow have corresponding pro
 
 We are using the ``extras`` setuptools features to also install provider packages.
 Most of the extras are also linked (same name) with provider packages - for example adding ``[google]``
-extra also adds ``apache-airflow-providers-google`` as dependency. However there are some extras that do
+extra also adds ``apache-airflow-providers-google`` as dependency. However, there are some extras that do
 not install providers (examples ``github_enterprise``, ``kerberos``, ``async`` - they add some extra
 dependencies which are needed for those ``extra`` features of Airflow mentioned. The three examples
 above add respectively GitHub Enterprise OAuth authentication, Kerberos integration or
@@ -70,23 +70,19 @@ asynchronous workers for Gunicorn. None of those have providers, they are just e
 System dependencies
 '''''''''''''''''''
 
-You need certain system level requirements in order to install Airflow. Those are requirements that are known
-to be needed for Linux system (Tested on Ubuntu Bullseye LTS) :
+You need certain system level requirements in order to install Airflow.
+Those are requirements that are known to be needed for Linux Debian distributions:
+
+Debian Bookworm (12)
+====================
+
+Debian Bookworm is our platform of choice for development and testing. It is the most up-to-date
+Debian distribution and it is the one we use for our CI/CD system. It is also the one we recommend
+for development and testing as well as production use.
 
 .. code-block:: bash
 
-   sudo apt-get install -y --no-install-recommends \
-           freetds-bin \
-           krb5-user \
-           ldap-utils \
-           libffi6 \
-           libsasl2-2 \
-           libsasl2-modules \
-           libssl1.1 \
-           locales  \
-           lsb-release \
-           sasl2-bin \
-           sqlite3 \
-           unixodbc
-
-You also need database client packages (Postgres or MySQL) if you want to use those databases.
+  sudo apt install -y --no-install-recommends apt-utils ca-certificates \
+    curl dumb-init freetds-bin krb5-user libgeos-dev \
+    ldap-utils libsasl2-2 libsasl2-modules libxmlsec1 locales libffi8 libldap-2.5-0 libssl3 netcat-openbsd \
+    lsb-release openssh-client python3-selinux rsync sasl2-bin sqlite3 sudo unixodbc

@@ -15,23 +15,27 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
-
-import unittest
 from unittest.mock import Mock, patch
 
-from airflow.models import DAG, DagRun
+import pytest
+
+from airflow.models.dag import DAG
+from airflow.models.dagrun import DagRun
 from airflow.ti_deps.deps.dagrun_exists_dep import DagrunRunningDep
 from airflow.utils.state import State
 
+pytestmark = [pytest.mark.db_test, pytest.mark.skip_if_database_isolation_mode]
 
-class TestDagrunRunningDep(unittest.TestCase):
-    @patch('airflow.models.DagRun.find', return_value=())
+
+class TestDagrunRunningDep:
+    @patch("airflow.models.DagRun.find", return_value=())
     def test_dagrun_doesnt_exist(self, mock_dagrun_find):
         """
         Task instances without dagruns should fail this dep
         """
-        dag = DAG('test_dag', max_active_runs=2)
+        dag = DAG("test_dag", schedule=None, max_active_runs=2)
         dagrun = DagRun(state=State.QUEUED)
         ti = Mock(task=Mock(dag=dag), get_dagrun=Mock(return_value=dagrun))
         assert not DagrunRunningDep().is_met(ti=ti)

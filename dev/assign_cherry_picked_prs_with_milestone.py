@@ -15,6 +15,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
 import logging
 import os
@@ -23,15 +24,17 @@ import subprocess
 import sys
 import textwrap
 from pathlib import Path
-from typing import Any, Dict, List, NamedTuple, Optional, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 import rich_click as click
 from github import Github, UnknownObjectException
-from github.Milestone import Milestone
 from github.PullRequest import PullRequest
-from github.Repository import Repository
 from rich.console import Console
 from rich.prompt import Confirm, Prompt
+
+if TYPE_CHECKING:
+    from github.Milestone import Milestone
+    from github.Repository import Repository
 
 CHANGELOG_SKIP_LABEL = "changelog:skip"
 
@@ -51,9 +54,8 @@ DOC_ONLY_CHANGES_FILE = "doc-only-changes.txt"
 EXCLUDED_CHANGES_FILE = "excluded-changes.txt"
 
 
-@click.group(context_settings={'help_option_names': ['-h', '--help'], 'max_content_width': 500})
-def cli():
-    ...
+@click.group(context_settings={"help_option_names": ["-h", "--help"], "max_content_width": 500})
+def cli(): ...
 
 
 option_verbose = click.option(
@@ -89,12 +91,12 @@ option_github_token = click.option(
     required=True,
     help=textwrap.dedent(
         """
-        Github token used to authenticate.
+        GitHub token used to authenticate.
         You can set omit it if you have GITHUB_TOKEN env variable set
         Can be generated with:
         https://github.com/settings/tokens/new?description=Read%20Write%20isssues&scopes=repo"""
     ),
-    envvar='GITHUB_TOKEN',
+    envvar="GITHUB_TOKEN",
 )
 
 option_limit_pr_count = click.option(
@@ -108,6 +110,7 @@ option_dry_run = click.option(
     "--dry-run",
     is_flag=True,
     help="Do not make any changes, just show what would have been done",
+    envvar="DRY_RUN",
 )
 
 option_skip_assigned = click.option(
@@ -138,7 +141,7 @@ option_output_folder = click.option(
 
 def render_template(
     template_name: str,
-    context: Dict[str, Any],
+    context: dict[str, Any],
     autoescape: bool = False,
     keep_trailing_newline: bool = False,
 ) -> str:
@@ -165,8 +168,8 @@ def render_template(
 
 
 def get_git_log_command(
-    verbose: bool, from_commit: Optional[str] = None, to_commit: Optional[str] = None
-) -> List[str]:
+    verbose: bool, from_commit: str | None = None, to_commit: str | None = None
+) -> list[str]:
     """
     Get git command to run for the current repo from the current folder (which is the package folder).
     :param verbose: whether to print verbose info while getting the command
@@ -184,7 +187,7 @@ def get_git_log_command(
         git_cmd.append(f"{from_commit}...{to_commit}")
     elif from_commit:
         git_cmd.append(from_commit)
-    git_cmd.extend(['--', '.'])
+    git_cmd.extend(["--", "."])
     if verbose:
         console.print(f"Command to run: '{' '.join(git_cmd)}'")
     return git_cmd
@@ -198,7 +201,7 @@ class Change(NamedTuple):
     date: str
     message: str
     message_without_backticks: str
-    pr: Optional[int]
+    pr: int | None
 
 
 def get_change_from_line(line: str) -> Change:
@@ -213,22 +216,22 @@ def get_change_from_line(line: str) -> Change:
         short_hash=split_line[1],
         date=split_line[2],
         message=message,
-        message_without_backticks=message.replace("`", "'").replace("&#39;", "'").replace('&amp;', "&"),
+        message_without_backticks=message.replace("`", "'").replace("&#39;", "'").replace("&amp;", "&"),
         pr=int(pr) if pr else None,
     )
 
 
-def get_changes(verbose: bool, previous_release: str, current_release: str) -> List[Change]:
+def get_changes(verbose: bool, previous_release: str, current_release: str) -> list[Change]:
     change_strings = subprocess.check_output(
         get_git_log_command(verbose, from_commit=previous_release, to_commit=current_release),
         cwd=SOURCE_DIR_PATH,
-        universal_newlines=True,
+        text=True,
     )
-    return [get_change_from_line(line) for line in change_strings.split("\n")]
+    return [get_change_from_line(line) for line in change_strings.splitlines()]
 
 
 def update_milestone(r: Repository, pr: PullRequest, m: Milestone):
-    # PR in Github API does not have a way to update milestone. It should be opened as issue,
+    # PR in GitHub API does not have a way to update milestone. It should be opened as issue,
     # and then it can be updated ¯\_(ツ)_/¯
     r.get_issue(pr.number).edit(milestone=m)
 
@@ -250,7 +253,7 @@ def assign_prs(
     previous_release: str,
     current_release: str,
     verbose: bool,
-    limit_pr_count: Optional[int],
+    limit_pr_count: int | None,
     dry_run: bool,
     milestone_number: int,
     skip_assigned: bool,
@@ -259,8 +262,7 @@ def assign_prs(
     output_folder: str,
 ):
     changes = get_changes(verbose, previous_release, current_release)
-    changes = list(filter(lambda change: change.pr is not None, changes))
-    prs = [change.pr for change in changes]
+    changes = [change for change in changes if change.pr is not None]
 
     g = Github(github_token)
     repo = g.get_repo("apache/airflow")
@@ -272,9 +274,7 @@ def assign_prs(
         console.print("\n[yellow]Implying --skip-assigned as summary report is enabled[/]\n")
         skip_assigned = True
     milestone = repo.get_milestone(milestone_number)
-    count_prs = len(prs)
-    if limit_pr_count:
-        count_prs = limit_pr_count
+    count_prs = limit_pr_count or len(changes)
     console.print(f"\n[green]Applying Milestone: {milestone.title} to {count_prs} merged PRs[/]\n")
     if dry_run:
         console.print("[yellow]Dry run mode![/]\n")
@@ -284,17 +284,17 @@ def assign_prs(
 
     doc_only_label = repo.get_label(TYPE_DOC_ONLY_LABEL)
     changelog_skip_label = repo.get_label(CHANGELOG_SKIP_LABEL)
-    changelog_changes: List[Change] = []
-    doc_only_changes: List[Change] = []
-    excluded_changes: List[Change] = []
-    for i in range(count_prs):
-        pr_number = prs[i]
+    changelog_changes: list[Change] = []
+    doc_only_changes: list[Change] = []
+    excluded_changes: list[Change] = []
+    for change in changes[:count_prs]:
+        pr_number = change.pr
         if pr_number is None:
             # Should not happen but MyPy is not happy
             continue
-        console.print('-' * 80)
+        console.print("-" * 80)
         console.print(
-            f"\n >>>> Retrieving PR#{pr_number}: " f"https://github.com/apache/airflow/pull/{pr_number}"
+            f"\n >>>> Retrieving PR#{pr_number}: https://github.com/apache/airflow/pull/{pr_number}"
         )
         pr: PullRequest
         try:
@@ -318,15 +318,15 @@ def assign_prs(
             if TYPE_DOC_ONLY_LABEL in label_names:
                 console.print("[yellow]It will be classified as doc-only change[/]\n")
                 if skip_assigned:
-                    doc_only_changes.append(changes[i])
+                    doc_only_changes.append(change)
             elif CHANGELOG_SKIP_LABEL in label_names:
                 console.print("[yellow]It will be excluded from changelog[/]\n")
                 if skip_assigned:
-                    excluded_changes.append(changes[i])
+                    excluded_changes.append(change)
             else:
                 console.print("[green]The change will be included in changelog[/]\n")
                 if skip_assigned:
-                    changelog_changes.append(changes[i])
+                    changelog_changes.append(change)
             if skip_assigned:
                 continue
         elif already_assigned_milestone_number is not None:
@@ -346,21 +346,21 @@ def assign_prs(
             if not dry_run:
                 update_milestone(repo, pr, milestone)
             if skip_assigned:
-                changelog_changes.append(changes[i])
+                changelog_changes.append(change)
         elif chosen_option in ("doc", "d"):
             console.print(f"Applying the label {doc_only_label} the PR #{pr_number}")
             if not dry_run:
                 pr.add_to_labels(doc_only_label)
                 update_milestone(repo, pr, milestone)
             if skip_assigned:
-                doc_only_changes.append(changes[i])
+                doc_only_changes.append(change)
         elif chosen_option in ("exclude", "e"):
             console.print(f"Applying the label {changelog_skip_label} the PR #{pr_number}")
             if not dry_run:
                 pr.add_to_labels(changelog_skip_label)
                 update_milestone(repo, pr, milestone)
             if skip_assigned:
-                excluded_changes.append(changes[i])
+                excluded_changes.append(change)
         elif chosen_option in ("skip", "s"):
             console.print(f"Skipping the PR #{pr_number}")
         elif chosen_option in ("quit", "q"):
@@ -378,8 +378,8 @@ def assign_prs(
 
     if output_folder:
 
-        def write_commits(type: str, path: Path, changes_to_write: List[Change]):
-            path.write_text("\n".join(change.short_hash for change in changes_to_write) + "\n")
+        def write_commits(type: str, path: Path, changes_to_write: list[Change]):
+            path.write_text("".join(f"{change.short_hash}\n" for change in changes_to_write))
             console.print(f"\n{type} commits written in {path}")
 
         write_commits("Changelog", Path(output_folder) / CHANGELOG_CHANGES_FILE, changelog_changes)

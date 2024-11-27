@@ -19,16 +19,25 @@
 ``apache-airflow-providers-odbc``
 =================================
 
-Content
--------
 
 .. toctree::
+    :hidden:
+    :maxdepth: 1
+    :caption: Basics
+
+    Home <self>
+    Changelog <changelog>
+    Security <security>
+
+.. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Guides
 
     Connection types <connections/odbc>
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: References
 
@@ -41,40 +50,71 @@ Content
 
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Commits
 
     Detailed list of commits <commits>
 
 
-Package apache-airflow-providers-odbc
+apache-airflow-providers-odbc package
 ------------------------------------------------------
 
 `ODBC <https://github.com/mkleehammer/pyodbc/wiki>`__
 
 
-Release: 2.0.3
+Release: 4.8.1
 
 Provider package
 ----------------
 
-This is a provider package for ``odbc`` provider. All classes for this provider package
-are in ``airflow.providers.odbc`` python package.
+This package is for the ``odbc`` provider.
+All classes for this package are included in the ``airflow.providers.odbc`` python package.
 
 Installation
 ------------
 
-You can install this package on top of an existing Airflow 2.1+ installation via
-``pip install apache-airflow-providers-odbc``
+You can install this package on top of an existing Airflow 2 installation via
+``pip install apache-airflow-providers-odbc``.
+For the minimum Airflow version supported, see ``Requirements`` below.
 
-PIP requirements
-----------------
+Requirements
+------------
 
-==================  ==================
-PIP package         Version required
-==================  ==================
-``apache-airflow``  ``>=2.1.0``
-``pyodbc``
-==================  ==================
+The minimum Apache Airflow version supported by this provider package is ``2.8.0``.
 
-.. include:: ../../airflow/providers/odbc/CHANGELOG.rst
+=======================================  ==================
+PIP package                              Version required
+=======================================  ==================
+``apache-airflow``                       ``>=2.8.0``
+``apache-airflow-providers-common-sql``  ``>=1.20.0``
+``pyodbc``                               ``>=5.0.0``
+=======================================  ==================
+
+Cross provider package dependencies
+-----------------------------------
+
+Those are dependencies that might be needed in order to use all the features of the package.
+You need to install the specified provider packages in order to use them.
+
+You can install such cross-provider dependencies when installing from PyPI. For example:
+
+.. code-block:: bash
+
+    pip install apache-airflow-providers-odbc[common.sql]
+
+
+============================================================================================================  ==============
+Dependent package                                                                                             Extra
+============================================================================================================  ==============
+`apache-airflow-providers-common-sql <https://airflow.apache.org/docs/apache-airflow-providers-common-sql>`_  ``common.sql``
+============================================================================================================  ==============
+
+Downloading official packages
+-----------------------------
+
+You can download officially released packages and verify their checksums and signatures from the
+`Official Apache Download site <https://downloads.apache.org/airflow/providers/>`_
+
+* `The apache-airflow-providers-odbc 4.8.1 sdist package <https://downloads.apache.org/airflow/providers/apache_airflow_providers_odbc-4.8.1.tar.gz>`_ (`asc <https://downloads.apache.org/airflow/providers/apache_airflow_providers_odbc-4.8.1.tar.gz.asc>`__, `sha512 <https://downloads.apache.org/airflow/providers/apache_airflow_providers_odbc-4.8.1.tar.gz.sha512>`__)
+* `The apache-airflow-providers-odbc 4.8.1 wheel package <https://downloads.apache.org/airflow/providers/apache_airflow_providers_odbc-4.8.1-py3-none-any.whl>`_ (`asc <https://downloads.apache.org/airflow/providers/apache_airflow_providers_odbc-4.8.1-py3-none-any.whl.asc>`__, `sha512 <https://downloads.apache.org/airflow/providers/apache_airflow_providers_odbc-4.8.1-py3-none-any.whl.sha512>`__)

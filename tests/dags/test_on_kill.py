@@ -15,15 +15,20 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-import time
+from __future__ import annotations
 
-from airflow.models import DAG
-from airflow.operators.dummy import DummyOperator
-from airflow.utils.context import Context
+import time
+from typing import TYPE_CHECKING
+
+from airflow.models.dag import DAG
+from airflow.operators.empty import EmptyOperator
 from airflow.utils.timezone import datetime
 
+if TYPE_CHECKING:
+    from airflow.utils.context import Context
 
-class DummyWithOnKill(DummyOperator):
+
+class DummyWithOnKill(EmptyOperator):
     def execute(self, context: Context):
         import os
 
@@ -36,7 +41,7 @@ class DummyWithOnKill(DummyOperator):
         # This runs extra processes, so that we can be sure that we correctly
         # tidy up all processes launched by a task when killing
         if not os.fork():
-            os.system('sleep 10')
+            os.system("sleep 10")
         time.sleep(10)
 
     def on_kill(self):
@@ -48,6 +53,6 @@ class DummyWithOnKill(DummyOperator):
 
 # DAG tests backfill with pooled tasks
 # Previously backfill would queue the task but never run it
-dag1 = DAG(dag_id='test_on_kill', start_date=datetime(2015, 1, 1))
+dag1 = DAG(dag_id="test_on_kill", start_date=datetime(2015, 1, 1), schedule="@daily")
 
-dag1_task1 = DummyWithOnKill(task_id='task1', dag=dag1, owner='airflow')
+dag1_task1 = DummyWithOnKill(task_id="task1", dag=dag1, owner="airflow")

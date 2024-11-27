@@ -36,9 +36,6 @@ For details see: :doc:`apache-airflow-providers:operators-and-hooks-ref/index`.
    * - :mod:`airflow.hooks.base`
      -
 
-   * - :mod:`airflow.hooks.dbapi`
-     -
-
    * - :mod:`airflow.models.baseoperator`
      -
 
@@ -53,16 +50,10 @@ For details see: :doc:`apache-airflow-providers:operators-and-hooks-ref/index`.
    * - Operators
      - Guides
 
-   * - :mod:`airflow.operators.bash`
-     - :doc:`How to use <howto/operator/bash>`
-
    * - :mod:`airflow.operators.branch`
      -
 
-   * - :mod:`airflow.operators.datetime`
-     -
-
-   * - :mod:`airflow.operators.dummy`
+   * - :mod:`airflow.operators.empty`
      -
 
    * - :mod:`airflow.operators.email`
@@ -74,16 +65,7 @@ For details see: :doc:`apache-airflow-providers:operators-and-hooks-ref/index`.
    * - :mod:`airflow.operators.latest_only`
      -
 
-   * - :mod:`airflow.operators.python`
-     - :doc:`How to use <howto/operator/python>`
-
-   * - :mod:`airflow.operators.sql`
-     -
-
-   * - :mod:`airflow.operators.subdag`
-     -
-
-   * - :mod:`airflow.operators.trigger_dagrun`
+   * - :mod:`airflow.providers.standard.operators.trigger_dagrun`
      -
 
 **Sensors:**
@@ -94,36 +76,8 @@ For details see: :doc:`apache-airflow-providers:operators-and-hooks-ref/index`.
    * - Sensors
      - Guides
 
-   * - :mod:`airflow.sensors.bash`
+   * - :mod:`airflow.sensors.base`
      -
-
-   * - :mod:`airflow.sensors.date_time`
-     -
-
-   * - :mod:`airflow.sensors.external_task`
-     - :doc:`How to use <howto/operator/external_task_sensor>`
-
-   * - :mod:`airflow.sensors.filesystem`
-     -
-
-   * - :mod:`airflow.sensors.python`
-     -
-
-   * - :mod:`airflow.sensors.smart_sensor`
-     - :doc:`concepts/smart-sensors`
-
-   * - :mod:`airflow.sensors.sql`
-     -
-
-   * - :mod:`airflow.sensors.time_delta`
-     -
-
-   * - :mod:`airflow.sensors.time_sensor`
-     -
-
-   * - :mod:`airflow.sensors.weekday`
-     -
-
 
 **Hooks:**
 
@@ -133,8 +87,8 @@ For details see: :doc:`apache-airflow-providers:operators-and-hooks-ref/index`.
    * - Hooks
      - Guides
 
-   * - :mod:`airflow.hooks.filesystem`
+   * - :mod:`airflow.providers.standard.hooks.filesystem`
      -
 
-   * - :mod:`airflow.hooks.subprocess`
+   * - :mod:`airflow.providers.standard.hooks.subprocess`
      -

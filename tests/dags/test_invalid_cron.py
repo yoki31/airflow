@@ -15,14 +15,13 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
-from airflow.models import DAG
-from airflow.operators.dummy import DummyOperator
+from airflow.models.dag import DAG
+from airflow.operators.empty import EmptyOperator
 from airflow.utils.timezone import datetime
 
-# The schedule_interval specified here is an INVALID
-# Cron expression. This invalid DAG will be used to
-# test whether dagbag.process_file() can identify
-# invalid Cron expression.
-dag1 = DAG(dag_id='test_invalid_cron', start_date=datetime(2015, 1, 1), schedule_interval="0 100 * * *")
-dag1_task1 = DummyOperator(task_id='task1', dag=dag1, owner='airflow')
+# This invalid DAG has a schedule specified with an INVALID cron expression.
+# It will be used to test whether dagbag.process_file() can identify this.
+dag1 = DAG(dag_id="test_invalid_cron", start_date=datetime(2015, 1, 1), schedule="0 100 * * *")
+dag1_task1 = EmptyOperator(task_id="task1", dag=dag1, owner="airflow")

@@ -15,12 +15,17 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
+
+from airflow.models.taskinstance import PAST_DEPENDS_MET
 from airflow.ti_deps.deps.base_ti_dep import BaseTIDep
 
 
 class NotPreviouslySkippedDep(BaseTIDep):
     """
-    Determines if any of the task's direct upstream relatives have decided this task should
+    Determine if this task should be skipped.
+
+    Based on any of the task's direct upstream relatives have decided this task should
     be skipped.
     """
 
@@ -35,7 +40,7 @@ class NotPreviouslySkippedDep(BaseTIDep):
             XCOM_SKIPMIXIN_SKIPPED,
             SkipMixin,
         )
-        from airflow.utils.state import State
+        from airflow.utils.state import TaskInstanceState
 
         upstream = ti.task.get_direct_relatives(upstream=True)
 
@@ -73,7 +78,16 @@ class NotPreviouslySkippedDep(BaseTIDep):
                     # If the parent SkipMixin has run, and the XCom result stored indicates this
                     # ti should be skipped, set ti.state to SKIPPED and fail the rule so that the
                     # ti does not execute.
-                    ti.set_state(State.SKIPPED, session)
+                    if dep_context.wait_for_past_depends_before_skipping:
+                        past_depends_met = ti.xcom_pull(
+                            task_ids=ti.task_id, key=PAST_DEPENDS_MET, session=session, default=False
+                        )
+                        if not past_depends_met:
+                            yield self._failing_status(
+                                reason=("Task should be skipped but the past depends are not met")
+                            )
+                            return
+                    ti.set_state(TaskInstanceState.SKIPPED, session)
                     yield self._failing_status(
                         reason=f"Skipping because of previous XCom result from parent task {parent.task_id}"
                     )

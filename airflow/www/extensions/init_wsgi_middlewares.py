@@ -15,33 +15,43 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from urllib.parse import urlparse
+from __future__ import annotations
 
-from flask import Flask
+from collections.abc import Iterable
+from typing import TYPE_CHECKING
+from urllib.parse import urlsplit
+
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from airflow.configuration import conf
+from airflow.exceptions import AirflowConfigException
+
+if TYPE_CHECKING:
+    from _typeshed.wsgi import StartResponse, WSGIEnvironment
+    from flask import Flask
 
 
-def _root_app(_, resp):
-    resp(b'404 Not Found', [('Content-Type', 'text/plain')])
-    return [b'Apache Airflow is not at this location']
+def _root_app(env: WSGIEnvironment, resp: StartResponse) -> Iterable[bytes]:
+    resp("404 Not Found", [("Content-Type", "text/plain")])
+    return [b"Apache Airflow is not at this location"]
 
 
-def init_wsgi_middleware(flask_app: Flask):
-    """Handle X-Forwarded-* headers and base_url support"""
+def init_wsgi_middleware(flask_app: Flask) -> None:
+    """Handle X-Forwarded-* headers and base_url support."""
+    webserver_base_url = conf.get_mandatory_value("webserver", "BASE_URL", fallback="")
+    if webserver_base_url.endswith("/"):
+        raise AirflowConfigException("webserver.base_url conf cannot have a trailing slash.")
     # Apply DispatcherMiddleware
-    base_url = urlparse(conf.get('webserver', 'base_url'))[2]
-    if not base_url or base_url == '/':
+    base_url = urlsplit(webserver_base_url)[2]
+    if not base_url or base_url == "/":
         base_url = ""
     if base_url:
-        flask_app.wsgi_app = DispatcherMiddleware(  # type: ignore
-            _root_app, mounts={base_url: flask_app.wsgi_app}
-        )
+        wsgi_app = DispatcherMiddleware(_root_app, mounts={base_url: flask_app.wsgi_app})
+        flask_app.wsgi_app = wsgi_app  # type: ignore[assignment]
 
     # Apply ProxyFix middleware
-    if conf.getboolean('webserver', 'ENABLE_PROXY_FIX'):
+    if conf.getboolean("webserver", "ENABLE_PROXY_FIX"):
         flask_app.wsgi_app = ProxyFix(  # type: ignore
             flask_app.wsgi_app,
             x_for=conf.getint("webserver", "PROXY_FIX_X_FOR", fallback=1),

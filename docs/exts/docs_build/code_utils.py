@@ -14,6 +14,8 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
+
 import os
 from contextlib import suppress
 
@@ -22,24 +24,23 @@ from docs.exts.provider_yaml_utils import load_package_data
 ROOT_PROJECT_DIR = os.path.abspath(
     os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir, os.pardir, os.pardir)
 )
-PROVIDER_INIT_FILE = os.path.join(ROOT_PROJECT_DIR, "airflow", "providers", "__init__.py")
 DOCS_DIR = os.path.join(ROOT_PROJECT_DIR, "docs")
 AIRFLOW_DIR = os.path.join(ROOT_PROJECT_DIR, "airflow")
 
 ALL_PROVIDER_YAMLS = load_package_data()
-AIRFLOW_SITE_DIR: str = os.environ.get('AIRFLOW_SITE_DIRECTORY') or ''
-PROCESS_TIMEOUT = 8 * 60  # 400 seconds
+ALL_PROVIDER_YAMLS_WITH_SUSPENDED = load_package_data(include_suspended=True)
+AIRFLOW_SITE_DIR: str = os.environ.get("AIRFLOW_SITE_DIRECTORY") or ""
+PROCESS_TIMEOUT = 15 * 60
 
 CONSOLE_WIDTH = 180
 
 
 def prepare_code_snippet(file_path: str, line_no: int, context_lines_count: int = 5) -> str:
-    """
-    Prepares code snippet.
+    """Prepares code snippet.
+
     :param file_path: file path
     :param line_no: line number
     :param context_lines_count: number of lines of context.
-    :return:
     """
 
     def guess_lexer_for_filename(filename):
@@ -65,7 +66,7 @@ def prepare_code_snippet(file_path: str, line_no: int, context_lines_count: int 
                 code=code, formatter=TerminalFormatter(), lexer=guess_lexer_for_filename(file_path)
             )
 
-        code_lines = code.split("\n")
+        code_lines = code.splitlines()
         # Prepend line number
         code_lines = [f"{line_no:4} | {line}" for line_no, line in enumerate(code_lines, 1)]
         # # Cut out the snippet

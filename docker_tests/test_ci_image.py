@@ -14,28 +14,24 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
-import subprocess
+from python_on_whales import DockerException
 
-from docker_tests.command_utils import run_command
-from docker_tests.docker_tests_utils import (
-    display_dependency_conflict_message,
-    docker_image,
-    run_bash_in_docker,
-)
+from docker_tests.docker_utils import display_dependency_conflict_message, run_bash_in_docker
 
 
-class TestFiles:
-    def test_dist_folder_should_exists(self):
-        run_bash_in_docker('[ -f /opt/airflow/airflow/www/static/dist/manifest.json ] || exit 1')
+def test_pip_dependencies_conflict(default_docker_image):
+    try:
+        run_bash_in_docker("pip check", image=default_docker_image)
+    except DockerException:
+        display_dependency_conflict_message()
+        raise
 
 
-class TestPythonPackages:
-    def test_pip_dependencies_conflict(self):
-        try:
-            run_command(
-                ["docker", "run", "--rm", "--entrypoint", "/bin/bash", docker_image, "-c", 'pip check']
-            )
-        except subprocess.CalledProcessError as ex:
-            display_dependency_conflict_message()
-            raise ex
+def test_providers_present():
+    try:
+        run_bash_in_docker("airflow providers list")
+    except DockerException:
+        display_dependency_conflict_message()
+        raise

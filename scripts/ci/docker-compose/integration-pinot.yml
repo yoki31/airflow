@@ -15,21 +15,20 @@
 # specific language governing permissions and limitations
 # under the License.
 ---
-version: "3.7"
 services:
   pinot:
     image: apachepinot/pinot:0.8.0
+    labels:
+      breeze.description: "Integration required for Apache Pinot hooks."
     ports:
       - "9080:9080"
-    volumes:
-      - /dev/urandom:/dev/random   # Required to get non-blocking entropy source
     command: QuickStart -type batch
     healthcheck:
       test: curl -f http://localhost:8000/health
       interval: 5s
       timeout: 30s
       retries: 50
-    restart: always
+    restart: "on-failure"
 
   airflow:
     environment:

@@ -19,32 +19,44 @@
 ``apache-airflow-providers-asana``
 ==================================
 
-Content
--------
 
 .. toctree::
+    :hidden:
+    :maxdepth: 1
+    :caption: Basics
+
+    Home <self>
+    Changelog <changelog>
+    Security <security>
+
+.. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Guides
 
     Connection types <connections/asana>
-    Operators <operators/asana>
+    Operators <operators/index>
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: References
 
     Python API <_api/airflow/providers/asana/index>
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
-    :caption: Resources
+    :caption: System tests
 
-    Example DAGs <https://github.com/apache/airflow/tree/main/airflow/providers/asana/example_dags>
+    System Tests <_api/tests/system/asana/index>
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Resources
 
+    Example DAGs <https://github.com/apache/airflow/blob/providers-asana/|version|/tests/system/providers/asana/example_asana.py>
     PyPI Repository <https://pypi.org/project/apache-airflow-providers-asana/>
     Installing from sources <installing-providers-from-sources>
 
@@ -52,40 +64,42 @@ Content
 
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Commits
 
     Detailed list of commits <commits>
 
 
-Package apache-airflow-providers-asana
+apache-airflow-providers-asana package
 ------------------------------------------------------
 
-`Asana <https://app.asana.com/>`__
+`Asana <https://asana.com/>`__
 
 
-Release: 1.1.2
+Release: 2.6.0
 
 Provider package
 ----------------
 
-This is a provider package for ``asana`` provider. All classes for this provider package
-are in ``airflow.providers.asana`` python package.
+This package is for the ``asana`` provider.
+All classes for this package are included in the ``airflow.providers.asana`` python package.
 
 Installation
 ------------
 
-You can install this package on top of an existing Airflow 2.1+ installation via
-``pip install apache-airflow-providers-asana``
+You can install this package on top of an existing Airflow 2 installation via
+``pip install apache-airflow-providers-asana``.
+For the minimum Airflow version supported, see ``Requirements`` below.
 
-PIP requirements
-----------------
+Requirements
+------------
+
+The minimum Apache Airflow version supported by this provider package is ``2.8.0``.
 
 ==================  ==================
 PIP package         Version required
 ==================  ==================
-``apache-airflow``  ``>=2.1.0``
-``asana``           ``>=0.10``
+``apache-airflow``  ``>=2.8.0``
+``asana``           ``>=0.10,<4.0.0``
 ==================  ==================
-
-.. include:: ../../airflow/providers/asana/CHANGELOG.rst

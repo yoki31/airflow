@@ -15,37 +15,39 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
+
 import datetime
 
 import pendulum
 import pytest
 
 from airflow.example_dags.plugins.workday import AfterWorkdayTimetable
-from airflow.settings import TIMEZONE
 from airflow.timetables.base import DagRunInfo, DataInterval, TimeRestriction, Timetable
+from airflow.utils.timezone import utc
 
-START_DATE = pendulum.DateTime(2021, 9, 4, tzinfo=TIMEZONE)  # This is a Saturday.
+START_DATE = pendulum.DateTime(2021, 9, 4, tzinfo=utc)  # This is a Saturday.
 
 WEEK_1_WEEKDAYS = [
-    pendulum.DateTime(2021, 9, 6, tzinfo=TIMEZONE),
-    pendulum.DateTime(2021, 9, 7, tzinfo=TIMEZONE),
-    pendulum.DateTime(2021, 9, 8, tzinfo=TIMEZONE),
-    pendulum.DateTime(2021, 9, 9, tzinfo=TIMEZONE),
-    pendulum.DateTime(2021, 9, 10, tzinfo=TIMEZONE),
+    pendulum.DateTime(2021, 9, 6, tzinfo=utc),  # This is a US holiday
+    pendulum.DateTime(2021, 9, 7, tzinfo=utc),
+    pendulum.DateTime(2021, 9, 8, tzinfo=utc),
+    pendulum.DateTime(2021, 9, 9, tzinfo=utc),
+    pendulum.DateTime(2021, 9, 10, tzinfo=utc),
 ]
 
-WEEK_1_SATURDAY = pendulum.DateTime(2021, 9, 11, tzinfo=TIMEZONE)
+WEEK_1_SATURDAY = pendulum.DateTime(2021, 9, 11, tzinfo=utc)
 
-WEEK_2_MONDAY = pendulum.DateTime(2021, 9, 13, tzinfo=TIMEZONE)
-WEEK_2_TUESDAY = pendulum.DateTime(2021, 9, 14, tzinfo=TIMEZONE)
+WEEK_2_MONDAY = pendulum.DateTime(2021, 9, 13, tzinfo=utc)
+WEEK_2_TUESDAY = pendulum.DateTime(2021, 9, 14, tzinfo=utc)
 
 
-@pytest.fixture()
+@pytest.fixture
 def restriction():
     return TimeRestriction(earliest=START_DATE, latest=None, catchup=True)
 
 
-@pytest.fixture()
+@pytest.fixture
 def timetable():
     return AfterWorkdayTimetable()
 
@@ -60,9 +62,10 @@ def test_dag_run_info_interval(start: pendulum.DateTime, end: pendulum.DateTime)
 
 
 def test_first_schedule(timetable: Timetable, restriction: TimeRestriction):
-    """Since DAG starts on Saturday, the first ever run covers the next Monday and schedules on Tuesday."""
+    """Since DAG starts on Saturday, and the first Monday is a holiday,
+    the first ever run covers the next Tuesday and schedules on Wednesday."""
     next_info = timetable.next_dagrun_info(last_automated_data_interval=None, restriction=restriction)
-    assert next_info == DagRunInfo.interval(WEEK_1_WEEKDAYS[0], WEEK_1_WEEKDAYS[1])
+    assert next_info == DagRunInfo.interval(WEEK_1_WEEKDAYS[1], WEEK_1_WEEKDAYS[2])
 
 
 @pytest.mark.parametrize(

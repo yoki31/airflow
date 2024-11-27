@@ -1,7 +1,7 @@
 ---
 name: Airflow Helm Chart Bug report
-description: Problems and issues with Apache Airflow Official Helm Chart
-labels: ["kind:bug", "area:helm-chart"]
+description: Problems and issues with the Apache Airflow Official Helm Chart
+labels: ["kind:bug", "area:helm-chart", "needs-triage"]
 body:
   - type: markdown
     attributes:
@@ -10,15 +10,15 @@ body:
         <img src='https://raw.githubusercontent.com/apache/airflow/main/docs/apache-airflow/img/logos/airflow_64x64_emoji_transparent.png' align='left' width='120' height='120'>
         Thank you for finding the time to report the problem!
 
-        We really appreciate the community efforts to improve Airflow.
+        We really appreciate the community's efforts to improve Airflow.
 
         Note that this issue is only for the
         [Official Apache Airflow Helm Chart](https://airflow.apache.org/docs/helm-chart/stable/index.html).
         If you use another 3rd-party Chart, you should report your issue in the repo of that chart instead.
 
-        Note, that you do not need to create an issue if you have a change ready to submit!
+        Note, you do not need to create an issue if you have a change ready to submit!
 
-        You can open [Pull Request](https://github.com/apache/airflow/pulls) immediately instead.
+        You can open a [pull request](https://github.com/apache/airflow/pulls) immediately instead.
         <br clear='left'/>"
       # yamllint enable rule:line-length
   - type: dropdown
@@ -28,7 +28,19 @@ body:
         What Apache Airflow Helm Chart version are you using?
       multiple: false
       options:
-        - "1.4.0 (latest released)"
+        - "1.15.0 (latest released)"
+        - "1.14.0"
+        - "1.13.1"
+        - "1.13.0"
+        - "1.12.0"
+        - "1.11.0"
+        - "1.10.0"
+        - "1.9.0"
+        - "1.8.0"
+        - "1.7.0"
+        - "1.6.0"
+        - "1.5.0"
+        - "1.4.0"
         - "1.3.0"
         - "1.2.0"
         - "1.1.0"
@@ -36,28 +48,12 @@ body:
         - "main (development)"
     validations:
       required: true
-  - type: dropdown
+  - type: input
     attributes:
       label: Apache Airflow version
       description: >
-        What Apache Airflow version are you using? Only Airflow 2 is supported for bugs. If you wish to
-        discuss Airflow 1.10, open [Discussion](https://github.com/apache/airflow/discussions) instead!
-      multiple: false
-      options:
-        - "2.2.4 (latest released)"
-        - "2.2.3"
-        - "2.2.2"
-        - "2.2.1"
-        - "2.2.0"
-        - "2.1.4"
-        - "2.1.3"
-        - "2.1.2"
-        - "2.1.1"
-        - "2.1.0"
-        - "2.0.2"
-        - "2.0.1"
-        - "2.0.0"
-        - "main (development)"
+        What Apache Airflow version are you using?
+        [Only Airflow 2 is supported](https://github.com/apache/airflow#version-life-cycle) for bugs.
     validations:
       required: true
   - type: input
@@ -76,12 +72,12 @@ body:
         you paste with ``` ```.
   - type: textarea
     attributes:
-      label: Docker Image customisations
+      label: Docker Image customizations
       description: What are the specific modification you've made in your image?
       placeholder: >
-          Did you extend or customise the official Airflow image? Did you add any packages? Maybe
-          you can share link to your image, or copy the Dockerfile and `docker build` commands
-          you used to build the image? Make sure to surround the code you paste with ``` ```.
+        Did you extend or customise the official Airflow image? Did you add any packages? Maybe
+        you can share a link to your image, or copy the Dockerfile and `docker build` commands
+        you used to build the image? Make sure to surround the code you paste with ``` ```.
   - type: textarea
     attributes:
       label: What happened
@@ -108,6 +104,8 @@ body:
         as minimally and precisely as possible. Keep in mind we do not have access to your cluster or DAGs.
         Remember that non-reproducible issues will be closed! Opening a discussion is recommended as a
         first step.
+    validations:
+      required: true
   - type: textarea
     attributes:
       label: Anything else
@@ -124,13 +122,14 @@ body:
         This is absolutely not required, but we are happy to guide you in the contribution process
         especially if you already have a good understanding of how to implement the fix.
         Airflow is a community-managed project and we love to bring new contributors in.
-        Find us in #airflow-how-to-pr on Slack!
+        Find us in #new-contributors on Slack!
       options:
         - label: Yes I am willing to submit a PR!
   - type: checkboxes
     attributes:
       label: Code of Conduct
-      description: The Code of Conduct helps create a safe space for everyone. We require
+      description: >
+        The Code of Conduct helps create a safe space for everyone. We require
         that everyone agrees to it.
       options:
         - label: >

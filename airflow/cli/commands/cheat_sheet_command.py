@@ -14,11 +14,17 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from typing import Iterable, List, Optional, Union
+from __future__ import annotations
 
-from airflow.cli.cli_parser import ActionCommand, GroupCommand, airflow_commands
+from collections.abc import Iterable
+from typing import TYPE_CHECKING
+
+from airflow.cli.cli_parser import GroupCommand, airflow_commands
 from airflow.cli.simple_table import AirflowConsole, SimpleTable
 from airflow.utils.cli import suppress_logs_and_warning
+
+if TYPE_CHECKING:
+    from airflow.cli.cli_parser import ActionCommand
 
 
 @suppress_logs_and_warning
@@ -31,12 +37,12 @@ def display_commands_index():
     """Display list of all commands."""
 
     def display_recursive(
-        prefix: List[str],
-        commands: Iterable[Union[GroupCommand, ActionCommand]],
-        help_msg: Optional[str] = None,
+        prefix: list[str],
+        commands: Iterable[GroupCommand | ActionCommand],
+        help_msg: str | None = None,
     ):
-        actions: List[ActionCommand] = []
-        groups: List[GroupCommand] = []
+        actions: list[ActionCommand] = []
+        groups: list[GroupCommand] = []
         for command in commands:
             if isinstance(command, GroupCommand):
                 groups.append(command)
@@ -46,7 +52,7 @@ def display_commands_index():
         console = AirflowConsole()
         if actions:
             table = SimpleTable(title=help_msg or "Miscellaneous commands")
-            table.add_column(width=40)
+            table.add_column(width=46)
             table.add_column()
             for action_command in sorted(actions, key=lambda d: d.name):
                 table.add_row(" ".join([*prefix, action_command.name]), action_command.help)

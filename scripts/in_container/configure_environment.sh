@@ -24,13 +24,11 @@ readonly TMUX_CONF_FILE=".tmux.conf"
 if [[ -d "${FILES_DIR}" ]]; then
     export AIRFLOW__CORE__DAGS_FOLDER="/files/dags"
     mkdir -pv "${AIRFLOW__CORE__DAGS_FOLDER}"
-    sudo chown "${HOST_USER_ID}":"${HOST_GROUP_ID}" "${AIRFLOW__CORE__DAGS_FOLDER}"
-    echo "Your dags for webserver and scheduler are read from ${AIRFLOW__CORE__DAGS_FOLDER} directory"
-    echo "which is mounted from your <AIRFLOW_SOURCES>/files/dags folder"
-    echo
+    if [[ ${HOST_OS} == "linux" && ${DOCKER_IS_ROOTLESS} != "true" ]]; then
+        sudo chown "${HOST_USER_ID}":"${HOST_GROUP_ID}" "${AIRFLOW__CORE__DAGS_FOLDER}" || true
+    fi
 else
     export AIRFLOW__CORE__DAGS_FOLDER="${AIRFLOW_HOME}/dags"
-    echo "Your dags for webserver and scheduler are read from ${AIRFLOW__CORE__DAGS_FOLDER} directory"
 fi
 
 
@@ -38,16 +36,13 @@ if [[ -d "${AIRFLOW_BREEZE_CONFIG_DIR}" && \
     -f "${AIRFLOW_BREEZE_CONFIG_DIR}/${VARIABLES_ENV_FILE}" ]]; then
     pushd "${AIRFLOW_BREEZE_CONFIG_DIR}" >/dev/null 2>&1 || exit 1
     echo
-    echo "Sourcing environment variables from ${VARIABLES_ENV_FILE} in ${AIRFLOW_BREEZE_CONFIG_DIR}"
+    echo "${COLOR_BLUE}Sourcing environment variables from ${VARIABLES_ENV_FILE} in ${AIRFLOW_BREEZE_CONFIG_DIR}${COLOR_RESET}"
     echo
+    set -o allexport
      # shellcheck disable=1090
     source "${VARIABLES_ENV_FILE}"
+    set +o allexport
     popd >/dev/null 2>&1 || exit 1
-else
-    echo
-    echo "You can add ${AIRFLOW_BREEZE_CONFIG_DIR} directory and place ${VARIABLES_ENV_FILE}"
-    echo "In it to make breeze source the variables automatically for you"
-    echo
 fi
 
 
@@ -55,14 +50,9 @@ if [[ -d "${AIRFLOW_BREEZE_CONFIG_DIR}" && \
     -f "${AIRFLOW_BREEZE_CONFIG_DIR}/${TMUX_CONF_FILE}" ]]; then
     pushd "${AIRFLOW_BREEZE_CONFIG_DIR}" >/dev/null 2>&1 || exit 1
     echo
-    echo "Using ${TMUX_CONF_FILE} from ${AIRFLOW_BREEZE_CONFIG_DIR}"
+    echo "${COLOR_BLUE}Using ${TMUX_CONF_FILE} from ${AIRFLOW_BREEZE_CONFIG_DIR}${COLOR_RESET}"
     echo
      # shellcheck disable=1090
     ln -sf "${AIRFLOW_BREEZE_CONFIG_DIR}/${TMUX_CONF_FILE}" ~
     popd >/dev/null 2>&1 || exit 1
-else
-    echo
-    echo "You can add ${AIRFLOW_BREEZE_CONFIG_DIR} directory and place ${TMUX_CONF_FILE}"
-    echo "in it to make breeze use your local ${TMUX_CONF_FILE} for tmux"
-    echo
 fi

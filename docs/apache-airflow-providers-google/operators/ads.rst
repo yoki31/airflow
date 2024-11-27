@@ -23,25 +23,31 @@ businesses to advertise on Google Search, YouTube and other sites across the web
 Prerequisite Tasks
 ^^^^^^^^^^^^^^^^^^
 
-.. include::/operators/_partials/prerequisite_tasks.rst
+.. include:: /operators/_partials/prerequisite_tasks.rst
 
 .. _howto/operator:GoogleAdsToGcsOperator:
 
 Google Ads to GCS
 ^^^^^^^^^^^^^^^^^
 
-To query the Google Ads API and generate a CSV report of the results use
-:class:`~airflow.providers.google.ads.transfers.ads_to_gcs.GoogleAdsToGcsOperator`.
+To query the Google Ads API and generate a CSV report of the results use ``GoogleAdsToGcsOperator``.
 
-.. exampleinclude:: /../../airflow/providers/google/ads/example_dags/example_ads.py
+.. exampleinclude:: /../../providers/tests/system/google/ads/example_ads.py
     :language: python
     :dedent: 4
     :start-after: [START howto_google_ads_to_gcs_operator]
     :end-before: [END howto_google_ads_to_gcs_operator]
 
-Use :ref:`Jinja templating <concepts:jinja-templating>` with
-:template-fields:`airflow.providers.google.ads.transfers.ads_to_gcs.GoogleAdsToGcsOperator`
-parameters which allow you to dynamically determine values.
+Use :ref:`Jinja templating <concepts:jinja-templating>` with those parameters which allow you to
+dynamically determine values:
+
+* ``client_ids``
+* ``query``
+* ``attributes``
+* ``bucket``
+* ``obj``
+* ``impersonation_chain``
+
 The result is saved to :ref:`XCom <concepts:xcom>`, which allows the result to be used by other operators.
 
 .. _howto/operator:GoogleAdsListAccountsOperator:
@@ -50,15 +56,20 @@ Upload Google Ads Accounts to GCS
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 To upload Google Ads accounts to Google Cloud Storage bucket use the
-:class:`~airflow.providers.google.ads.transfers.ads_to_gcs.GoogleAdsListAccountsOperator`.
+``GoogleAdsListAccountsOperator``.
 
-.. exampleinclude:: /../../airflow/providers/google/ads/example_dags/example_ads.py
+.. exampleinclude:: /../../providers/tests/system/google/ads/example_ads.py
     :language: python
     :dedent: 4
     :start-after: [START howto_ads_list_accounts_operator]
     :end-before: [END howto_ads_list_accounts_operator]
 
-Use :ref:`Jinja templating <concepts:jinja-templating>` with
-:template-fields:`airflow.providers.google.ads.transfers.ads_to_gcs.GoogleAdsToGcsOperator`
+Use :ref:`Jinja templating <concepts:jinja-templating>` with those parameters which allow you to
+dynamically determine values:
+
+* ``bucket``
+* ``object_name``
+* ``impersonation_chain``
+
 parameters which allow you to dynamically determine values.
 The result is saved to :ref:`XCom <concepts:xcom>`, which allows the result to be used by other operators.

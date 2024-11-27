@@ -17,9 +17,11 @@
 # under the License.
 """Contains the TaskNotRunningDep."""
 
+from __future__ import annotations
+
 from airflow.ti_deps.deps.base_ti_dep import BaseTIDep
 from airflow.utils.session import provide_session
-from airflow.utils.state import State
+from airflow.utils.state import TaskInstanceState
 
 
 class TaskNotRunningDep(BaseTIDep):
@@ -29,15 +31,17 @@ class TaskNotRunningDep(BaseTIDep):
     IGNORABLE = False
 
     def __eq__(self, other):
-        return type(self) == type(other)
+        """Check if two task instance dependencies are of the same type."""
+        return type(self) is type(other)
 
     def __hash__(self):
+        """Compute the hash value based on the type of the task instance dependency."""
         return hash(type(self))
 
     @provide_session
     def _get_dep_statuses(self, ti, session, dep_context=None):
-        if ti.state != State.RUNNING:
+        if ti.state != TaskInstanceState.RUNNING:
             yield self._passing_status(reason="Task is not in running state.")
             return
 
-        yield self._failing_status(reason='Task is in the running state')
+        yield self._failing_status(reason="Task is in the running state")

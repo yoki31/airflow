@@ -31,7 +31,7 @@ can also enable alternative secrets backend to retrieve Airflow connections or A
     If you use an alternative secrets backend, check inside your backend to view the values of your variables and connections.
 
 You can also get Airflow configurations with sensitive data from the Secrets Backend.
-See :doc:`../../../howto/set-config` for more details.
+See :doc:`/howto/set-config` for more details.
 
 Search path
 ^^^^^^^^^^^
@@ -39,7 +39,9 @@ When looking up a connection/variable, by default Airflow will search environmen
 database second.
 
 If you enable an alternative secrets backend, it will be searched first, followed by environment variables,
-then metastore.  This search ordering is not configurable.
+then metastore.  This search ordering is not configurable. Though, in some alternative secrets backend you might have
+the option to filter which connection/variable/config is searched in the secret backend. Please look at the
+documentation of the secret backend you are using to see if such option is available.
 
 .. warning::
 
@@ -98,8 +100,8 @@ capability of Apache Airflow. You can see all those providers in
 Roll your own secrets backend
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-A secrets backend is a subclass of :py:class:`airflow.secrets.BaseSecretsBackend` and must implement either
-:py:meth:`~airflow.secrets.BaseSecretsBackend.get_connection` or :py:meth:`~airflow.secrets.BaseSecretsBackend.get_conn_uri`.
+A secrets backend is a subclass of :py:class:`airflow.secrets.base_secrets.BaseSecretsBackend` and must implement either
+:py:meth:`~airflow.secrets.base_secrets.BaseSecretsBackend.get_connection` or :py:meth:`~airflow.secrets.base_secrets.BaseSecretsBackend.get_conn_value` for retrieving connections, :py:meth:`~airflow.secrets.base_secrets.BaseSecretsBackend.get_variable` for retrieving variables and :py:meth:`~airflow.secrets.base_secrets.BaseSecretsBackend.get_config` for retrieving Airflow configurations.
 
 After writing your backend class, provide the fully qualified class name in the ``backend`` key in the ``[secrets]``
 section of ``airflow.cfg``.
@@ -107,20 +109,13 @@ section of ``airflow.cfg``.
 Additional arguments to your SecretsBackend can be configured in ``airflow.cfg`` by supplying a JSON string to ``backend_kwargs``, which will be passed to the ``__init__`` of your SecretsBackend.
 See :ref:`Configuration <secrets_backend_configuration>` for more details, and :ref:`SSM Parameter Store <ssm_parameter_store_secrets>` for an example.
 
-.. note::
-
-    If you are rolling your own secrets backend, you don't strictly need to use airflow's URI format. But
-    doing so makes it easier to switch between environment variables, the metastore, and your secrets backend.
 
 Adapt to non-Airflow compatible secret formats for connections
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The default implementation of Secret backend requires use of an Airflow-specific format of storing
 secrets for connections. Currently most community provided implementations require the connections to
-be stored as URIs (with the possibility of adding more friendly formats in the future)
-:doc:`apache-airflow-providers:core-extensions/secrets-backends`. However some organizations may prefer
-to keep the credentials (passwords/tokens etc) in other formats --
-for example when you want the same credentials to be used across multiple clients, or when you want to
-use built-in mechanism of rotating the credentials that do not work well with the Airflow-specific format.
+be stored as JSON or the Airflow Connection URI format (see
+:doc:`apache-airflow-providers:core-extensions/secrets-backends`). However, some organizations may need to store the credentials (passwords/tokens etc) in some other way. For example, if the same credentials store needs to be used for multiple data platforms, or if you are using a service with a built-in mechanism of rotating the credentials that does not work with the Airflow-specific format.
 In this case you will need to roll your own secret backend as described in the previous chapter,
-possibly extending existing secret backend and adapt it to the scheme used by your organization.
+possibly extending an existing secrets backend and adapting it to the scheme used by your organization.

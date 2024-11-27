@@ -15,26 +15,30 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
+
+import datetime
 import urllib.parse
 
 import pytest
 
-from airflow.utils import dates
-from tests.test_utils.db import clear_db_runs
+from tests_common.test_utils.db import clear_db_runs
 
-DEFAULT_DATE = dates.days_ago(2)
+pytestmark = pytest.mark.db_test
+
+DEFAULT_DATE = datetime.datetime(2022, 1, 1)
 
 DEFAULT_VAL = urllib.parse.quote_plus(str(DEFAULT_DATE))
 
 
 @pytest.fixture(scope="module", autouse=True)
-def reset_dagruns():
+def _reset_dagruns():
     """Clean up stray garbage from other tests."""
     clear_db_runs()
 
 
 def test_task_view_no_task_instance(admin_client):
-    url = f"/task?task_id=runme_0&dag_id=example_bash_operator&execution_date={DEFAULT_VAL}"
+    url = f"/task?task_id=runme_0&dag_id=example_bash_operator&logical_date={DEFAULT_VAL}"
     resp = admin_client.get(url, follow_redirects=True)
     assert resp.status_code == 200
     html = resp.data.decode("utf-8")
@@ -43,7 +47,7 @@ def test_task_view_no_task_instance(admin_client):
 
 
 def test_rendered_templates_view_no_task_instance(admin_client):
-    url = f"/rendered-templates?task_id=runme_0&dag_id=example_bash_operator&execution_date={DEFAULT_VAL}"
+    url = f"/rendered-templates?task_id=runme_0&dag_id=example_bash_operator&logical_date={DEFAULT_VAL}"
     resp = admin_client.get(url, follow_redirects=True)
     assert resp.status_code == 200
     html = resp.data.decode("utf-8")

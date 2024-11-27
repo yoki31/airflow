@@ -15,8 +15,9 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
 """Enums for DAG serialization."""
+
+from __future__ import annotations
 
 from enum import Enum, unique
 
@@ -26,8 +27,8 @@ from enum import Enum, unique
 class Encoding(str, Enum):
     """Enum of encoding constants."""
 
-    TYPE = '__type'
-    VAR = '__var'
+    TYPE = "__type"
+    VAR = "__var"
 
 
 # Supported types for encoding. primitives and list are not encoded.
@@ -35,17 +36,40 @@ class Encoding(str, Enum):
 class DagAttributeTypes(str, Enum):
     """Enum of supported attribute types of DAG."""
 
-    DAG = 'dag'
-    OP = 'operator'
-    DATETIME = 'datetime'
-    TIMEDELTA = 'timedelta'
-    TIMEZONE = 'timezone'
-    RELATIVEDELTA = 'relativedelta'
-    DICT = 'dict'
-    SET = 'set'
-    TUPLE = 'tuple'
-    POD = 'k8s.V1Pod'
-    TASK_GROUP = 'taskgroup'
-    EDGE_INFO = 'edgeinfo'
-    PARAM = 'param'
-    XCOM_REF = 'xcomref'
+    DAG = "dag"
+    ASSET_EVENT_ACCESSORS = "asset_event_accessors"
+    ASSET_EVENT_ACCESSOR = "asset_event_accessor"
+    OP = "operator"
+    DATETIME = "datetime"
+    TIMEDELTA = "timedelta"
+    TIMEZONE = "timezone"
+    RELATIVEDELTA = "relativedelta"
+    BASE_TRIGGER = "base_trigger"
+    AIRFLOW_EXC_SER = "airflow_exc_ser"
+    BASE_EXC_SER = "base_exc_ser"
+    DICT = "dict"
+    SET = "set"
+    TUPLE = "tuple"
+    POD = "k8s.V1Pod"
+    TASK_GROUP = "taskgroup"
+    EDGE_INFO = "edgeinfo"
+    PARAM = "param"
+    XCOM_REF = "xcomref"
+    ASSET = "asset"
+    ASSET_ALIAS = "asset_alias"
+    ASSET_ANY = "asset_any"
+    ASSET_ALL = "asset_all"
+    ASSET_REF = "asset_ref"
+    SIMPLE_TASK_INSTANCE = "simple_task_instance"
+    BASE_JOB = "Job"
+    TASK_INSTANCE = "task_instance"
+    DAG_RUN = "dag_run"
+    DAG_MODEL = "dag_model"
+    LOG_TEMPLATE = "log_template"
+    CONNECTION = "connection"
+    TASK_CONTEXT = "task_context"
+    ARG_NOT_SET = "arg_not_set"
+    TASK_CALLBACK_REQUEST = "task_callback_request"
+    DAG_CALLBACK_REQUEST = "dag_callback_request"
+    TASK_INSTANCE_KEY = "task_instance_key"
+    TRIGGER = "trigger"

@@ -17,30 +17,30 @@
  * under the License.
  */
 
-const webpack = require('webpack');
-const path = require('path');
-const ManifestPlugin = require('webpack-manifest-plugin');
-const cwplg = require('clean-webpack-plugin');
-const CopyWebpackPlugin = require('copy-webpack-plugin');
-const MiniCssExtractPlugin = require('mini-css-extract-plugin');
-const MomentLocalesPlugin = require('moment-locales-webpack-plugin');
-const OptimizeCSSAssetsPlugin = require('optimize-css-assets-webpack-plugin');
-const LicensePlugin = require('webpack-license-plugin');
-const TerserPlugin = require('terser-webpack-plugin');
+const webpack = require("webpack");
+const path = require("path");
+const { WebpackManifestPlugin } = require("webpack-manifest-plugin");
+const cwplg = require("clean-webpack-plugin");
+const CopyWebpackPlugin = require("copy-webpack-plugin");
+const MiniCssExtractPlugin = require("mini-css-extract-plugin");
+const MomentLocalesPlugin = require("moment-locales-webpack-plugin");
+const CssMinimizerPlugin = require("css-minimizer-webpack-plugin");
+const LicensePlugin = require("webpack-license-plugin");
+const TerserPlugin = require("terser-webpack-plugin");
 
 // Input Directory (airflow/www)
 // noinspection JSUnresolvedVariable
-const CSS_DIR = path.resolve(__dirname, './static/css');
-const JS_DIR = path.resolve(__dirname, './static/js');
+const CSS_DIR = path.resolve(__dirname, "./static/css");
+const JS_DIR = path.resolve(__dirname, "./static/js");
 
 // Output Directory (airflow/www/static/dist)
 // noinspection JSUnresolvedVariable
-const BUILD_DIR = path.resolve(__dirname, './static/dist');
+const BUILD_DIR = path.resolve(__dirname, "./static/dist");
 
 // Convert licenses json into a standard format for LICENSES.txt
 const formatLicenses = (packages) => {
   let text = `Apache Airflow
-Copyright 2016-2021 The Apache Software Foundation
+Copyright 2016-2023 The Apache Software Foundation
 
 This product includes software developed at The Apache Software
 Foundation (http://www.apache.org/).
@@ -48,7 +48,9 @@ Foundation (http://www.apache.org/).
 =======================================================================
 `;
   packages.forEach((p) => {
-    text += `${p.name}|${p.version}:\n-----\n${p.license}\n${p.licenseText || p.author}\n${p.repository || ''}\n\n\n`;
+    text += `${p.name}|${p.version}:\n-----\n${p.license}\n${
+      p.licenseText || p.author
+    }\n${p.repository || ""}\n\n\n`;
   });
   return text;
 };
@@ -57,60 +59,62 @@ const config = {
   entry: {
     airflowDefaultTheme: `${CSS_DIR}/bootstrap-theme.css`,
     connectionForm: `${JS_DIR}/connection_form.js`,
+    chart: [`${CSS_DIR}/chart.css`],
     dag: `${JS_DIR}/dag.js`,
-    dagCode: `${JS_DIR}/dag_code.js`,
     dagDependencies: `${JS_DIR}/dag_dependencies.js`,
     dags: [`${CSS_DIR}/dags.css`, `${JS_DIR}/dags.js`],
     flash: `${CSS_DIR}/flash.css`,
-    gantt: [`${CSS_DIR}/gantt.css`, `${JS_DIR}/gantt.js`],
-    graph: [`${CSS_DIR}/graph.css`, `${JS_DIR}/graph.js`],
-    ie: `${JS_DIR}/ie.js`,
+    graph: `${CSS_DIR}/graph.css`,
     loadingDots: `${CSS_DIR}/loading-dots.css`,
+    login: `${JS_DIR}/login/index.tsx`,
     main: [`${CSS_DIR}/main.css`, `${JS_DIR}/main.js`],
     materialIcons: `${CSS_DIR}/material-icons.css`,
-    moment: 'moment-timezone',
+    moment: "moment-timezone",
     switch: `${CSS_DIR}/switch.css`,
     task: `${JS_DIR}/task.js`,
     taskInstances: `${JS_DIR}/task_instances.js`,
     tiLog: `${JS_DIR}/ti_log.js`,
-    tree: [`${CSS_DIR}/tree.css`, `${JS_DIR}/tree/index.jsx`],
-    calendar: [`${CSS_DIR}/calendar.css`, `${JS_DIR}/calendar.js`],
-    durationChart: `${JS_DIR}/duration_chart.js`,
+    toggleTheme: `${JS_DIR}/toggle_theme.js`,
+    grid: `${JS_DIR}/dag/index.tsx`,
+    clusterActivity: `${JS_DIR}/cluster-activity/index.tsx`,
+    assets: `${JS_DIR}/assets/index.tsx`,
     trigger: `${JS_DIR}/trigger.js`,
     variableEdit: `${JS_DIR}/variable_edit.js`,
   },
   output: {
     path: BUILD_DIR,
-    filename: '[name].[chunkhash].js',
-    chunkFilename: '[name].[chunkhash].js',
-    library: ['Airflow', '[name]'],
-    libraryTarget: 'umd',
+    filename: "[name].[chunkhash].js",
+    chunkFilename: "[name].[chunkhash].js",
+    library: ["Airflow", "[name]"],
+    libraryTarget: "umd",
+    publicPath: "",
   },
   resolve: {
-    extensions: [
-      '.js',
-      '.jsx',
-      '.css',
-    ],
+    alias: {
+      // Be sure to update aliases in jest.config.js and tsconfig.json
+      src: path.resolve(__dirname, "static/js"),
+    },
+    extensions: [".js", ".jsx", ".ts", ".tsx", ".css"],
   },
   module: {
     rules: [
       {
-        test: /datatables\.net.*/,
-        loader: 'imports-loader?define=>false',
-      },
-      {
-        test: /\.jsx?$/,
+        test: /\.(js|jsx|tsx|ts)$/,
         exclude: /node_modules/,
-        loader: 'babel-loader',
-        options: {
-          presets: ['@babel/preset-react'],
-        },
+        use: [
+          {
+            loader: "babel-loader",
+            options: {
+              presets: ["@babel/preset-react", "@babel/preset-typescript"],
+            },
+          },
+        ],
       },
       // Extract css files
       {
         test: /\.css$/,
         include: CSS_DIR,
+        exclude: /node_modules/,
         use: [
           {
             loader: MiniCssExtractPlugin.loader,
@@ -118,15 +122,22 @@ const config = {
               esModule: true,
             },
           },
-          'css-loader',
+          "css-loader",
         ],
+      },
+      // Extract css files
+      {
+        test: /\.css$/,
+        exclude: CSS_DIR,
+        include: /node_modules/,
+        use: ["css-loader"],
       },
       /* for css linking images */
       {
         test: /\.(png|jpg|gif)$/i,
         use: [
           {
-            loader: 'url-loader',
+            loader: "url-loader",
             options: {
               limit: 100000,
             },
@@ -138,27 +149,35 @@ const config = {
         test: /\.woff(2)?(\?v=[0-9]\.[0-9]\.[0-9])?$/,
         use: [
           {
-            loader: 'url-loader',
+            loader: "url-loader",
             options: {
               limit: 100000,
-              mimetype: 'application/font-woff',
+              mimetype: "application/font-woff",
             },
           },
         ],
       },
       {
         test: /\.(ttf|eot|svg)(\?v=[0-9]\.[0-9]\.[0-9])?$/,
-        loader: 'file-loader',
+        use: [
+          {
+            loader: "file-loader",
+          },
+        ],
       },
     ],
   },
   plugins: [
-    new ManifestPlugin(),
+    new WebpackManifestPlugin({
+      // d3-tip is named index.js in its dist folder which was confusing the manifest
+      map: (file) =>
+        file.path === "d3-tip.js" ? { ...file, name: "d3-tip.js" } : file,
+    }),
     new cwplg.CleanWebpackPlugin({
       verbose: true,
     }),
     new MiniCssExtractPlugin({
-      filename: '[name].[chunkhash].css',
+      filename: "[name].[chunkhash].css",
     }),
 
     // MomentJS loads all the locale, making it a huge JS file.
@@ -166,7 +185,7 @@ const config = {
     new MomentLocalesPlugin(),
 
     new webpack.DefinePlugin({
-      'process.env': {
+      "process.env": {
         NODE_ENV: JSON.stringify(process.env.NODE_ENV),
       },
     }),
@@ -176,84 +195,92 @@ const config = {
     new CopyWebpackPlugin({
       patterns: [
         {
-          from: 'node_modules/nvd3/build/*.min.*',
-          flatten: true,
-        },
-        // Update this when upgrade d3 package, as the path in new D3 is different
-        {
-          from: 'node_modules/d3/d3.min.*',
+          from: "node_modules/d3/d3.min.*",
           flatten: true,
         },
         {
-          from: 'node_modules/dagre-d3/dist/*.min.*',
+          from: "node_modules/dagre-d3/dist/*.min.*",
           flatten: true,
         },
         {
-          from: 'node_modules/d3-shape/dist/*.min.*',
+          from: "node_modules/d3-shape/dist/*.min.*",
           flatten: true,
         },
         {
-          from: 'node_modules/d3-tip/dist/index.js',
-          to: 'd3-tip.js',
+          from: "node_modules/d3-tip/dist/index.js",
+          to: "d3-tip.js",
+          flatten: true,
+        },
+
+        {
+          from: "node_modules/eonasdan-bootstrap-datetimepicker/build/css/bootstrap-datetimepicker.min.css",
           flatten: true,
         },
         {
-          from: 'node_modules/bootstrap-3-typeahead/*min.*',
+          from: "node_modules/jquery-ui/dist/jquery-ui.min.js",
           flatten: true,
         },
         {
-          from: 'node_modules/datatables.net/**/**.min.*',
+          from: "node_modules/jquery-ui/dist/themes/base/jquery-ui.min.css",
           flatten: true,
         },
         {
-          from: 'node_modules/datatables.net-bs/**/**.min.*',
+          from: "node_modules/eonasdan-bootstrap-datetimepicker/build/js/bootstrap-datetimepicker.min.js",
           flatten: true,
         },
         {
-          from: 'node_modules/eonasdan-bootstrap-datetimepicker/build/css/bootstrap-datetimepicker.min.css',
+          from: "node_modules/redoc/bundles/redoc.standalone.*",
           flatten: true,
         },
         {
-          from: 'node_modules/eonasdan-bootstrap-datetimepicker/build/js/bootstrap-datetimepicker.min.js',
+          from: "node_modules/codemirror/lib/codemirror.*",
           flatten: true,
         },
         {
-          from: 'node_modules/redoc/bundles/redoc.standalone.*',
+          from: "node_modules/codemirror/addon/lint/**.*",
           flatten: true,
         },
         {
-          from: 'node_modules/codemirror/lib/codemirror.*',
+          from: "node_modules/codemirror/mode/javascript/javascript.js",
           flatten: true,
         },
         {
-          from: 'node_modules/codemirror/addon/lint/**.*',
+          from: "node_modules/jshint/dist/jshint.js",
           flatten: true,
         },
         {
-          from: 'node_modules/codemirror/mode/javascript/javascript.js',
-          flatten: true,
+          from: "templates/swagger-ui",
+          to: `${BUILD_DIR}/swagger-ui`,
         },
         {
-          from: 'node_modules/jshint/dist/jshint.js',
-          flatten: true,
+          from: "node_modules/swagger-ui-dist",
+          to: `${BUILD_DIR}/swagger-ui`,
         },
       ],
     }),
     new LicensePlugin({
       additionalFiles: {
-        '../../../../licenses/LICENSES-ui.txt': formatLicenses,
+        "../../../../3rd-party-licenses/LICENSES-ui.txt": formatLicenses,
       },
-      unacceptableLicenseTest: (licenseIdentifier) => (
-        ['BCL', 'JSR', 'ASL', 'RSAL', 'SSPL', 'CPOL', 'NPL', 'BSD-4', 'QPL', 'GPL', 'LGPL'].includes(licenseIdentifier)
-      ),
+      unacceptableLicenseTest: (licenseIdentifier) =>
+        [
+          "BCL",
+          "JSR",
+          "ASL",
+          "RSAL",
+          "SSPL",
+          "CPOL",
+          "NPL",
+          "BSD-4",
+          "QPL",
+          "GPL",
+          "LGPL",
+        ].includes(licenseIdentifier),
     }),
   ],
   optimization: {
-    minimize: process.env.NODE_ENV === 'production',
-    minimizer: [
-      new OptimizeCSSAssetsPlugin({}),
-      new TerserPlugin(),
-    ],
+    minimize: process.env.NODE_ENV === "production",
+    minimizer: [new CssMinimizerPlugin({}), new TerserPlugin()],
   },
 };
 

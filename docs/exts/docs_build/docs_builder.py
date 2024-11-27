@@ -14,26 +14,25 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
+
 import os
 import re
 import shlex
 import shutil
 from glob import glob
 from subprocess import run
-from typing import List
 
 from rich.console import Console
 
 from docs.exts.docs_build.code_utils import (
-    AIRFLOW_SITE_DIR,
     ALL_PROVIDER_YAMLS,
+    ALL_PROVIDER_YAMLS_WITH_SUSPENDED,
     CONSOLE_WIDTH,
     DOCS_DIR,
     PROCESS_TIMEOUT,
-    pretty_format_path,
 )
 from docs.exts.docs_build.errors import DocBuildError, parse_sphinx_warnings
-from docs.exts.docs_build.helm_chart_utils import chart_version
 from docs.exts.docs_build.spelling_checks import SpellingError, parse_spelling_warnings
 
 console = Console(force_terminal=True, color_system="standard", width=CONSOLE_WIDTH)
@@ -42,9 +41,8 @@ console = Console(force_terminal=True, color_system="standard", width=CONSOLE_WI
 class AirflowDocsBuilder:
     """Documentation builder for Airflow."""
 
-    def __init__(self, package_name: str, for_production: bool):
+    def __init__(self, package_name: str):
         self.package_name = package_name
-        self.for_production = for_production
 
     @property
     def _doctree_dir(self) -> str:
@@ -59,12 +57,12 @@ class AirflowDocsBuilder:
         """Is current documentation package versioned?"""
         # Disable versioning. This documentation does not apply to any released product and we can update
         # it as needed, i.e. with each new package of providers.
-        return self.package_name not in ('apache-airflow-providers', 'docker-stack')
+        return self.package_name not in ("apache-airflow-providers", "docker-stack")
 
     @property
     def _build_dir(self) -> str:
         if self.is_versioned:
-            version = "stable" if self.for_production else "latest"
+            version = "stable"
             return f"{DOCS_DIR}/_build/docs/{self.package_name}/{version}"
         else:
             return f"{DOCS_DIR}/_build/docs/{self.package_name}"
@@ -90,28 +88,6 @@ class AirflowDocsBuilder:
         return os.path.join(self._build_dir, f"warning-build-{self.package_name}.log")
 
     @property
-    def _current_version(self):
-        if not self.is_versioned:
-            raise Exception("This documentation package is not versioned")
-        if self.package_name == 'apache-airflow':
-            from airflow.version import version as airflow_version
-
-            return airflow_version
-        if self.package_name.startswith('apache-airflow-providers-'):
-            provider = next(p for p in ALL_PROVIDER_YAMLS if p['package-name'] == self.package_name)
-            return provider['versions'][0]
-        if self.package_name == 'helm-chart':
-            return chart_version()
-        return Exception(f"Unsupported package: {self.package_name}")
-
-    @property
-    def _publish_dir(self) -> str:
-        if self.is_versioned:
-            return f"docs-archive/{self.package_name}/{self._current_version}"
-        else:
-            return f"docs-archive/{self.package_name}"
-
-    @property
     def _src_dir(self) -> str:
         return f"{DOCS_DIR}/{self.package_name}"
 
@@ -124,7 +100,7 @@ class AirflowDocsBuilder:
         os.makedirs(api_dir, exist_ok=True)
         os.makedirs(self._build_dir, exist_ok=True)
 
-    def check_spelling(self, verbose: bool) -> List[SpellingError]:
+    def check_spelling(self, verbose: bool) -> tuple[list[SpellingError], list[DocBuildError]]:
         """
         Checks spelling
 
@@ -132,6 +108,7 @@ class AirflowDocsBuilder:
         :return: list of errors
         """
         spelling_errors = []
+        build_errors = []
         os.makedirs(self._build_dir, exist_ok=True)
         shutil.rmtree(self.log_spelling_output_dir, ignore_errors=True)
         os.makedirs(self.log_spelling_output_dir, exist_ok=True)
@@ -152,16 +129,14 @@ class AirflowDocsBuilder:
         ]
 
         env = os.environ.copy()
-        env['AIRFLOW_PACKAGE_NAME'] = self.package_name
-        if self.for_production:
-            env['AIRFLOW_FOR_PRODUCTION'] = 'true'
+        env["AIRFLOW_PACKAGE_NAME"] = self.package_name
         if verbose:
             console.print(
-                f"[blue]{self.package_name:60}:[/] Executing cmd: ",
+                f"[info]{self.package_name:60}:[/] Executing cmd: ",
                 " ".join(shlex.quote(c) for c in build_cmd),
             )
-            console.print(f"[blue]{self.package_name:60}:[/] The output is hidden until an error occurs.")
-        with open(self.log_spelling_filename, "wt") as output:
+            console.print(f"[info]{self.package_name:60}:[/] The output is hidden until an error occurs.")
+        with open(self.log_spelling_filename, "w") as output:
             completed_proc = run(
                 build_cmd,
                 cwd=self._src_dir,
@@ -183,25 +158,30 @@ class AirflowDocsBuilder:
                     ),
                 )
             )
-            warning_text = ""
+            spelling_warning_text = ""
             for filepath in glob(f"{self.log_spelling_output_dir}/**/*.spelling", recursive=True):
                 with open(filepath) as spelling_file:
-                    warning_text += spelling_file.read()
-
-            spelling_errors.extend(parse_spelling_warnings(warning_text, self._src_dir))
-            console.print(f"[blue]{self.package_name:60}:[/] [red]Finished spell-checking with errors[/]")
+                    spelling_warning_text += spelling_file.read()
+            spelling_errors.extend(parse_spelling_warnings(spelling_warning_text, self._src_dir))
+            if os.path.isfile(self.log_spelling_filename):
+                with open(self.log_spelling_filename) as warning_file:
+                    warning_text = warning_file.read()
+                # Remove 7-bit C1 ANSI escape sequences
+                warning_text = re.sub(r"\x1B[@-_][0-?]*[ -/]*[@-~]", "", warning_text)
+                build_errors.extend(parse_sphinx_warnings(warning_text, self._src_dir))
+            console.print(f"[info]{self.package_name:60}:[/] [red]Finished spell-checking with errors[/]")
         else:
             if spelling_errors:
                 console.print(
-                    f"[blue]{self.package_name:60}:[/] [yellow]Finished spell-checking with warnings[/]"
+                    f"[info]{self.package_name:60}:[/] [yellow]Finished spell-checking with warnings[/]"
                 )
             else:
                 console.print(
-                    f"[blue]{self.package_name:60}:[/] [green]Finished spell-checking successfully[/]"
+                    f"[info]{self.package_name:60}:[/] [green]Finished spell-checking successfully[/]"
                 )
-        return spelling_errors
+        return spelling_errors, build_errors
 
-    def build_sphinx_docs(self, verbose: bool) -> List[DocBuildError]:
+    def build_sphinx_docs(self, verbose: bool) -> list[DocBuildError]:
         """
         Build Sphinx documentation.
 
@@ -227,20 +207,18 @@ class AirflowDocsBuilder:
             self._build_dir,  # path to output directory
         ]
         env = os.environ.copy()
-        env['AIRFLOW_PACKAGE_NAME'] = self.package_name
-        if self.for_production:
-            env['AIRFLOW_FOR_PRODUCTION'] = 'true'
+        env["AIRFLOW_PACKAGE_NAME"] = self.package_name
         if verbose:
             console.print(
-                f"[blue]{self.package_name:60}:[/] Executing cmd: ",
+                f"[info]{self.package_name:60}:[/] Executing cmd: ",
                 " ".join(shlex.quote(c) for c in build_cmd),
             )
         else:
             console.print(
-                f"[blue]{self.package_name:60}:[/] Running sphinx. "
+                f"[info]{self.package_name:60}:[/] Running sphinx. "
                 f"The output is hidden until an error occurs."
             )
-        with open(self.log_build_filename, "wt") as output:
+        with open(self.log_build_filename, "w") as output:
             completed_proc = run(
                 build_cmd,
                 cwd=self._src_dir,
@@ -264,45 +242,23 @@ class AirflowDocsBuilder:
             warning_text = re.sub(r"\x1B[@-_][0-?]*[ -/]*[@-~]", "", warning_text)
             build_errors.extend(parse_sphinx_warnings(warning_text, self._src_dir))
         if build_errors:
-            console.print(f"[blue]{self.package_name:60}:[/] [red]Finished docs building with errors[/]")
+            console.print(f"[info]{self.package_name:60}:[/] [red]Finished docs building with errors[/]")
         else:
-            console.print(f"[blue]{self.package_name:60}:[/] [green]Finished docs building successfully[/]")
+            console.print(f"[info]{self.package_name:60}:[/] [green]Finished docs building successfully[/]")
         return build_errors
 
-    def publish(self, override_versioned: bool):
-        """Copy documentation packages files to airflow-site repository."""
-        console.print(f"Publishing docs for {self.package_name}")
-        output_dir = os.path.join(AIRFLOW_SITE_DIR, self._publish_dir)
-        pretty_source = pretty_format_path(self._build_dir, os.getcwd())
-        pretty_target = pretty_format_path(output_dir, AIRFLOW_SITE_DIR)
-        console.print(f"Copy directory: {pretty_source} => {pretty_target}")
-        if os.path.exists(output_dir):
-            if self.is_versioned:
-                if override_versioned:
-                    console.print(f"Overriding previously existing {output_dir}! ")
-                else:
-                    console.print(
-                        f"Skipping previously existing {output_dir}! "
-                        f"Delete it manually if you want to regenerate it!"
-                    )
-                    console.print()
-                    return
-            shutil.rmtree(output_dir)
-        shutil.copytree(self._build_dir, output_dir)
-        if self.is_versioned:
-            with open(os.path.join(output_dir, "..", "stable.txt"), "w") as stable_file:
-                stable_file.write(self._current_version)
-        console.print()
 
-
-def get_available_providers_packages():
+def get_available_providers_packages(include_suspended: bool = False):
     """Get list of all available providers packages to build."""
-    return [provider['package-name'] for provider in ALL_PROVIDER_YAMLS]
+    return [
+        provider["package-name"]
+        for provider in (ALL_PROVIDER_YAMLS_WITH_SUSPENDED if include_suspended else ALL_PROVIDER_YAMLS)
+    ]
 
 
-def get_available_packages():
+def get_available_packages(include_suspended: bool = False):
     """Get list of all available packages to build."""
-    provider_package_names = get_available_providers_packages()
+    provider_package_names = get_available_providers_packages(include_suspended=include_suspended)
     return [
         "apache-airflow",
         *provider_package_names,

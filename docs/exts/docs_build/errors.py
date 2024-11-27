@@ -14,14 +14,18 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
+
 import os
 from functools import total_ordering
-from typing import Dict, List, NamedTuple, Optional
+from typing import NamedTuple
 
 from rich.console import Console
 
 from airflow.utils.code_utils import prepare_code_snippet
-from docs.exts.docs_build.code_utils import CONSOLE_WIDTH
+
+from docs.exts.docs_build.code_utils import CONSOLE_WIDTH  # isort:skip (needed to workaround isort bug)
+
 
 CURRENT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__)))
 DOCS_DIR = os.path.abspath(os.path.join(CURRENT_DIR, os.pardir, os.pardir))
@@ -33,8 +37,8 @@ console = Console(force_terminal=True, color_system="standard", width=CONSOLE_WI
 class DocBuildError(NamedTuple):
     """Errors found in docs build."""
 
-    file_path: Optional[str]
-    line_no: Optional[int]
+    file_path: str | None
+    line_no: int | None
     message: str
 
     def __eq__(self, other):
@@ -46,8 +50,8 @@ class DocBuildError(NamedTuple):
         return not self == other
 
     def __lt__(self, right):
-        file_path_a = self.file_path or ''
-        file_path_b = right.file_path or ''
+        file_path_a = self.file_path or ""
+        file_path_b = right.file_path or ""
         line_no_a = self.line_no or 0
         line_no_b = right.line_no or 0
         left = (file_path_a, line_no_a, self.message)
@@ -55,16 +59,16 @@ class DocBuildError(NamedTuple):
         return left < right
 
 
-def display_errors_summary(build_errors: Dict[str, List[DocBuildError]]) -> None:
+def display_errors_summary(build_errors: dict[str, list[DocBuildError]]) -> None:
     """Displays summary of errors"""
     console.print()
     console.print("[red]" + "#" * 30 + " Start docs build errors summary " + "#" * 30 + "[/]")
     console.print()
     for package_name, errors in build_errors.items():
         if package_name:
-            console.print("=" * 30 + f" [blue]{package_name}[/] " + "=" * 30)
+            console.print("=" * 30 + f" [info]{package_name}[/] " + "=" * 30)
         else:
-            console.print("=" * 30, " [blue]General[/] ", "=" * 30)
+            console.print("=" * 30, " [info]General[/] ", "=" * 30)
         for warning_no, error in enumerate(sorted(errors), 1):
             console.print("-" * 30, f"[red]Error {warning_no:3}[/]", "-" * 20)
             console.print(error.message)
@@ -73,8 +77,9 @@ def display_errors_summary(build_errors: Dict[str, List[DocBuildError]]) -> None
                 console.print(
                     f"File path: {os.path.relpath(error.file_path, start=DOCS_DIR)} ({error.line_no})"
                 )
-                console.print()
-                console.print(prepare_code_snippet(error.file_path, error.line_no))
+                if os.path.isfile(error.file_path):
+                    console.print()
+                    console.print(prepare_code_snippet(error.file_path, error.line_no))
             elif error.file_path:
                 console.print(f"File path: {error.file_path}")
     console.print()
@@ -82,7 +87,7 @@ def display_errors_summary(build_errors: Dict[str, List[DocBuildError]]) -> None
     console.print()
 
 
-def parse_sphinx_warnings(warning_text: str, docs_dir: str) -> List[DocBuildError]:
+def parse_sphinx_warnings(warning_text: str, docs_dir: str) -> list[DocBuildError]:
     """
     Parses warnings from Sphinx.
 
@@ -91,7 +96,7 @@ def parse_sphinx_warnings(warning_text: str, docs_dir: str) -> List[DocBuildErro
     :return: list of DocBuildErrors.
     """
     sphinx_build_errors = []
-    for sphinx_warning in warning_text.split("\n"):
+    for sphinx_warning in warning_text.splitlines():
         if not sphinx_warning:
             continue
         warning_parts = sphinx_warning.split(":", 2)

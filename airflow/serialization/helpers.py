@@ -14,30 +14,55 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+"""Serialized DAG and BaseOperator."""
 
-"""Serialized DAG and BaseOperator"""
-from typing import Any, Union
+from __future__ import annotations
 
+from typing import Any
+
+from airflow.configuration import conf
 from airflow.settings import json
+from airflow.utils.log.secrets_masker import redact
 
 
-def serialize_template_field(template_field: Any) -> Union[str, dict, list, int, float]:
+def serialize_template_field(template_field: Any, name: str) -> str | dict | list | int | float:
     """
-    Return a serializable representation of the templated_field.
-    If a templated_field contains a Class or Instance for recursive templating, store them
-    as strings. If the templated_field is not recursive return the field
+    Return a serializable representation of the templated field.
 
-    :param template_field: Task's Templated Field
+    If ``templated_field`` contains a class or instance that requires recursive
+    templating, store them as strings. Otherwise simply return the field as-is.
     """
 
     def is_jsonable(x):
         try:
             json.dumps(x)
-            return True
         except (TypeError, OverflowError):
             return False
+        else:
+            return True
+
+    max_length = conf.getint("core", "max_templated_field_length")
 
     if not is_jsonable(template_field):
-        return str(template_field)
+        try:
+            serialized = template_field.serialize()
+        except AttributeError:
+            serialized = str(template_field)
+        if len(serialized) > max_length:
+            rendered = redact(serialized, name)
+            return (
+                "Truncated. You can change this behaviour in [core]max_templated_field_length. "
+                f"{rendered[:max_length - 79]!r}... "
+            )
+        return serialized
     else:
+        if not template_field:
+            return template_field
+        serialized = str(template_field)
+        if len(serialized) > max_length:
+            rendered = redact(serialized, name)
+            return (
+                "Truncated. You can change this behaviour in [core]max_templated_field_length. "
+                f"{rendered[:max_length - 79]!r}... "
+            )
         return template_field

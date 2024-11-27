@@ -19,15 +19,20 @@
 # This is an example docker build script. It is not intended for PRODUCTION use
 set -euo pipefail
 AIRFLOW_SOURCES="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../" && pwd)"
-cd "${AIRFLOW_SOURCES}"
+
+TEMP_DOCKER_DIR=$(mktemp -d)
+pushd "${TEMP_DOCKER_DIR}"
+
+cp "${AIRFLOW_SOURCES}/Dockerfile" "${TEMP_DOCKER_DIR}"
 
 # [START build]
-export AIRFLOW_VERSION=2.2.2
-export DEBIAN_VERSION="bullseye"
+export AIRFLOW_VERSION=2.2.4
+export DOCKER_BUILDKIT=1
 
 docker build . -f Dockerfile \
     --pull \
-    --build-arg PYTHON_BASE_IMAGE="python:3.7-slim-${DEBIAN_VERSION}" \
+    --platform 'linux/amd64' \
+    --build-arg PYTHON_BASE_IMAGE="python:3.9-slim-bookworm" \
     --build-arg AIRFLOW_VERSION="${AIRFLOW_VERSION}" \
     --build-arg ADDITIONAL_AIRFLOW_EXTRAS="slack,odbc" \
     --build-arg ADDITIONAL_PYTHON_DEPS=" \
@@ -50,3 +55,5 @@ docker build . -f Dockerfile \
     --tag "my-custom-sources-image:0.0.1"
 # [END build]
 docker rmi --force "my-custom-sources-image:0.0.1"
+popd
+rm -rf "${TEMP_DOCKER_DIR}"

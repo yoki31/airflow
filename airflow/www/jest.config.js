@@ -20,10 +20,45 @@
 const config = {
   verbose: true,
   transform: {
-    '^.+\\.jsx?$': 'babel-jest',
+    "^.+\\.[jt]sx?$": "babel-jest",
   },
-  testEnvironment: 'jsdom',
-  setupFilesAfterEnv: ['./jest-setup.js'],
+  testEnvironment: "jsdom",
+  setupFilesAfterEnv: ["./jest-setup.js"],
+  moduleDirectories: ["node_modules"],
+  moduleNameMapper: {
+    // Listing all aliases
+    "^src/(.*)$": "<rootDir>/static/js/$1",
+  },
+  transformIgnorePatterns: [
+    `node_modules/(?!${[
+      // specify modules that needs to be transformed for jest. (esm modules)
+      "ansi_up",
+      "axios",
+      "bail",
+      "ccount",
+      "character-entities",
+      "comma-separated-tokens",
+      "decode-named-character-reference",
+      "escape-string-regexp",
+      "hast",
+      "is-plain-obj",
+      "markdown-table",
+      "mdast",
+      "micromark",
+      "property-information",
+      "react-markdown",
+      "remark-gfm",
+      "remark-parse",
+      "remark-rehype",
+      "space-separated-tokens",
+      "trim-lines",
+      "trough",
+      "unified",
+      "unist",
+      "vfile",
+      "vfile-message",
+    ].join("|")})`,
+  ],
 };
 
 module.exports = config;

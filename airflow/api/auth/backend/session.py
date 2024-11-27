@@ -14,29 +14,25 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""Session authentication backend"""
-from functools import wraps
-from typing import Any, Callable, Optional, Tuple, TypeVar, Union, cast
+"""Session authentication backend."""
 
-from flask import Response, g
+from __future__ import annotations
 
-CLIENT_AUTH: Optional[Union[Tuple[str, str], Any]] = None
+import warnings
+from typing import Any
 
+import airflow.providers.fab.auth_manager.api.auth.backend.session as fab_session
+from airflow.exceptions import RemovedInAirflow3Warning
 
-def init_app(_):
-    """Initializes authentication backend"""
-
-
-T = TypeVar("T", bound=Callable)
+CLIENT_AUTH: tuple[str, str] | Any | None = None
 
 
-def requires_authentication(function: T):
-    """Decorator for functions that require authentication"""
+warnings.warn(
+    "This module is deprecated. Please use `airflow.providers.fab.auth_manager.api.auth.backend.session` instead.",
+    RemovedInAirflow3Warning,
+    stacklevel=2,
+)
 
-    @wraps(function)
-    def decorated(*args, **kwargs):
-        if g.user.is_anonymous:
-            return Response("Unauthorized", 401, {})
-        return function(*args, **kwargs)
 
-    return cast(T, decorated)
+init_app = fab_session.init_app
+requires_authentication = fab_session.requires_authentication

@@ -15,47 +15,55 @@
     specific language governing permissions and limitations
     under the License.
 
-
+.. _set-up-database-backend:
 
 Set up a Database Backend
 =========================
 
-Airflow was built to interact with its metadata using `SqlAlchemy <https://docs.sqlalchemy.org/en/13/>`__.
+Airflow was built to interact with its metadata using `SqlAlchemy <https://docs.sqlalchemy.org/en/14/>`__.
 
 The document below describes the database engine configurations, the necessary changes to their configuration to be used with Airflow, as well as changes to the Airflow configurations to connect to these databases.
 
 Choosing database backend
 -------------------------
 
-If you want to take a real test drive of Airflow, you should consider setting up a database backend to **PostgreSQL**, **MySQL**, or **MSSQL**.
+If you want to take a real test drive of Airflow, you should consider setting up a database backend to **PostgreSQL** or **MySQL**.
 By default, Airflow uses **SQLite**, which is intended for development purposes only.
 
 Airflow supports the following database engine versions, so make sure which version you have. Old versions may not support all SQL statements.
 
-* PostgreSQL: 10, 11, 12, 13
-* MySQL: 5.7, 8
-* MsSQL: 2017, 2019
+* PostgreSQL: 12, 13, 14, 15, 16
+* MySQL: 8.0, `Innovation <https://dev.mysql.com/blog-archive/introducing-mysql-innovation-and-long-term-support-lts-versions>`_
 * SQLite: 3.15.0+
 
 If you plan on running more than one scheduler, you have to meet additional requirements.
 For details, see :ref:`Scheduler HA Database Requirements <scheduler:ha:db_requirements>`.
 
+.. warning::
+
+  Despite big similarities between MariaDB and MySQL, we DO NOT support MariaDB as a backend for Airflow.
+  There are known problems (for example index handling) between MariaDB and MySQL and we do not test
+  our migration scripts nor application execution on Maria DB. We know there were people who used
+  MariaDB for Airflow and that cause a lot of operational headache for them so we strongly discourage
+  attempts of using MariaDB as a backend and users cannot expect any community support for it
+  because the number of users who tried to use MariaDB for Airflow is very small.
+
 Database URI
 ------------
 
 Airflow uses SQLAlchemy to connect to the database, which requires you to configure the Database URL.
-You can do this in option ``sql_alchemy_conn`` in section ``[core]``. It is also common to configure
-this option with ``AIRFLOW__CORE__SQL_ALCHEMY_CONN`` environment variable.
+You can do this in option ``sql_alchemy_conn`` in section ``[database]``. It is also common to configure
+this option with ``AIRFLOW__DATABASE__SQL_ALCHEMY_CONN`` environment variable.
 
 .. note::
     For more information on setting the configuration, see :doc:`/howto/set-config`.
 
-If you want to check the current value, you can use ``airflow config get-value core sql_alchemy_conn`` command as in
+If you want to check the current value, you can use ``airflow config get-value database sql_alchemy_conn`` command as in
 the example below.
 
 .. code-block:: bash
 
-    $ airflow config get-value core sql_alchemy_conn
+    $ airflow config get-value database sql_alchemy_conn
     sqlite:////tmp/airflow/airflow.db
 
 The exact format description is described in the SQLAlchemy documentation, see `Database Urls <https://docs.sqlalchemy.org/en/14/core/engines.html>`__. We will also show you some examples below.
@@ -70,7 +78,7 @@ it only works with Sequential Executor) and it should NEVER be used for producti
 There is a minimum version of sqlite3 required to run Airflow 2.0+ - minimum version is 3.15.0. Some of the
 older systems have an earlier version of sqlite installed by default and for those system you need to manually
 upgrade SQLite to use version newer than 3.15.0. Note, that this is not a ``python library`` version, it's the
-SQLite system-level application that needs to be upgraded. There are different ways how SQLIte might be
+SQLite system-level application that needs to be upgraded. There are different ways how SQLite might be
 installed, you can find some information about that at the `official website of SQLite
 <https://www.sqlite.org/index.html>`_ and in the documentation specific to distribution of your Operating
 System.
@@ -86,7 +94,7 @@ You can make sure which version is used by the interpreter by running this check
 .. code-block:: bash
 
     root@b8a8e73caa2c:/opt/airflow# python
-    Python 3.6.12 (default, Nov 25 2020, 03:59:00)
+    Python 3.8.10 (default, Mar 15 2022, 12:22:08)
     [GCC 8.3.0] on linux
     Type "help", "copyright", "credits" or "license" for more information.
     >>> import sqlite3
@@ -109,7 +117,7 @@ An example URI for the sqlite database:
 AmazonLinux SQLite can only be upgraded to v3.7 using the source repos. Airflow requires v3.15 or higher. Use the
 following instructions to setup the base image (or AMI) with latest SQLite3
 
-Pre-requisite: You will need ``wget``, ``tar``, ``gzip``,`` gcc``, ``make``, and ``expect`` to get the upgrade process working.
+Pre-requisite: You will need ``wget``, ``tar``, ``gzip``, ``gcc``, ``make``, and ``expect`` to get the upgrade process working.
 
 .. code-block:: bash
 
@@ -159,6 +167,11 @@ In the example below, a database ``airflow_db`` and user  with username ``airflo
    CREATE USER airflow_user WITH PASSWORD 'airflow_pass';
    GRANT ALL PRIVILEGES ON DATABASE airflow_db TO airflow_user;
 
+   -- PostgreSQL 15 requires additional privileges:
+   -- Note: Connect to the airflow_db database before running the following GRANT statement
+   -- You can do this in psql with: \c airflow_db
+   GRANT ALL ON SCHEMA public TO airflow_user;
+
 .. note::
 
    The database must use a UTF-8 character set
@@ -205,7 +218,7 @@ If you use a current Postgres user with custom search_path, search_path can be c
 
    ALTER USER airflow_user SET search_path = public;
 
-For more information regarding setup of the PostgreSQL connection, see `PostgreSQL dialect <https://docs.sqlalchemy.org/en/13/dialects/postgresql.html>`__ in SQLAlchemy documentation.
+For more information regarding setup of the PostgreSQL connection, see `PostgreSQL dialect <https://docs.sqlalchemy.org/en/14/dialects/postgresql.html>`__ in SQLAlchemy documentation.
 
 .. note::
 
@@ -223,12 +236,12 @@ For more information regarding setup of the PostgreSQL connection, see `PostgreS
 
 .. note::
 
-   For managed Postgres such as Redshift, Azure Postgresql, CloudSQL, Amazon RDS, you should use
+   For managed Postgres such as Azure Postgresql, CloudSQL, Amazon RDS, you should use
    ``keepalives_idle`` in the connection parameters and set it to less than the idle time because those
    services will close idle connections after some time of inactivity (typically 300 seconds),
    which results with error ``The error: psycopg2.operationalerror: SSL SYSCALL error: EOF detected``.
    The ``keepalive`` settings can be changed via ``sql_alchemy_connect_args`` configuration parameter
-   :doc:`../configurations-ref` in ``[core]`` section. You can configure the args for example in your
+   :doc:`../configurations-ref` in ``[database]`` section. You can configure the args for example in your
    local_settings.py and the ``sql_alchemy_connect_args`` should be a full import path to the dictionary
    that stores the configuration parameters. You can read about
    `Postgres Keepalives <https://www.postgresql.org/docs/current/libpq-connect.html>`_.
@@ -250,8 +263,12 @@ For more information regarding setup of the PostgreSQL connection, see `PostgreS
       sql_alchemy_connect_args = airflow_local_settings.keepalive_kwargs
 
 
+See :ref:`Configuring local settings <set-config:configuring-local-settings>` for details on how to
+configure local settings.
 
-.. spelling::
+
+
+.. spelling:word-list::
 
      hba
 
@@ -286,58 +303,61 @@ We recommend using the ``mysqlclient`` driver and specifying it in your SqlAlche
 
     mysql+mysqldb://<user>:<password>@<host>[:<port>]/<dbname>
 
-But we also support the ``mysql-connector-python`` driver, which lets you connect through SSL
-without any cert options provided.
+.. important::
+    The integration of MySQL backend has only been validated using the ``mysqlclient`` driver
+    during Apache Airflow's continuous integration (CI) process.
 
-.. code-block:: text
-
-   mysql+mysqlconnector://<user>:<password>@<host>[:<port>]/<dbname>
-
-However if you want to use other drivers visit the `MySQL Dialect <https://docs.sqlalchemy.org/en/13/dialects/mysql.html>`__  in SQLAlchemy documentation for more information regarding download
+If you want to use other drivers visit the `MySQL Dialect <https://docs.sqlalchemy.org/en/14/dialects/mysql.html>`__  in SQLAlchemy documentation for more information regarding download
 and setup of the SqlAlchemy connection.
 
 In addition, you also should pay particular attention to MySQL's encoding. Although the ``utf8mb4`` character set is more and more popular for MySQL (actually, ``utf8mb4`` becomes default character set in MySQL8.0), using the ``utf8mb4`` encoding requires additional setting in Airflow 2+ (See more details in `#7570 <https://github.com/apache/airflow/pull/7570>`__.). If you use ``utf8mb4`` as character set, you should also set ``sql_engine_collation_for_ids=utf8mb3_bin``.
 
-Setting up a MsSQL Database
----------------------------
+.. note::
 
-You need to create a database and a database user that Airflow will use to access this database.
-In the example below, a database ``airflow_db`` and user  with username ``airflow_user`` with password ``airflow_pass`` will be created.
-Note, that in case of MsSQL, Airflow uses ``READ COMMITTED`` transaction isolation and it must have
-``READ_COMMITTED_SNAPSHOT`` feature enabled, otherwise read transactions might generate deadlocks
-(especially in case of backfill). Airflow will refuse to use database that has the feature turned off.
-You can read more about transaction isolation and snapshot features at
-`Transaction isolation level <https://docs.microsoft.com/en-us/sql/t-sql/statements/set-transaction-isolation-level-transact-sql>`_
+    In strict mode, MySQL doesn't allow ``0000-00-00`` as a valid date. Then you might get errors like
+    ``"Invalid default value for 'end_date'"`` in some cases (some Airflow tables use ``0000-00-00 00:00:00`` as timestamp field default value).
+    To avoid this error, you could disable ``NO_ZERO_DATE`` mode on you MySQL server.
+    Read https://stackoverflow.com/questions/9192027/invalid-default-value-for-create-date-timestamp-field for how to disable it.
+    See `SQL Mode - NO_ZERO_DATE <https://dev.mysql.com/doc/refman/8.0/en/sql-mode.html#sqlmode_no_zero_date>`__ for more information.
 
-.. code-block:: sql
+MsSQL Database
+--------------
 
-   CREATE DATABASE airflow;
-   ALTER DATABASE airflow SET READ_COMMITTED_SNAPSHOT ON;
-   CREATE LOGIN airflow_user WITH PASSWORD='airflow_pass123%';
-   USE airflow;
-   CREATE USER airflow_user FROM LOGIN airflow_user;
-   GRANT ALL PRIVILEGES ON DATABASE airflow TO airflow_user;
+.. warning::
 
+    After `discussion <https://lists.apache.org/thread/r06j306hldg03g2my1pd4nyjxg78b3h4>`__
+    and a `voting process <https://lists.apache.org/thread/pgcgmhf6560k8jbsmz8nlyoxosvltph2>`__,
+    the Airflow's PMC members and Committers have reached a resolution to no longer maintain MsSQL as a supported Database Backend.
 
-We recommend using the ``mssql+pyodbc`` driver and specifying it in your SqlAlchemy connection string.
-
-.. code-block:: text
-
-    mssql+pyodbc://<user>:<password>@<host>[:port]/<db>?[driver=<driver>]
+    As of Airflow 2.9.0 support of MsSQL has been removed for Airflow Database Backend.
+    This does not affect the existing provider packages (operators and hooks), DAGs can still access and process data from MsSQL.
+    However, further usage may throw errors making Airflow's core functionality unusable.
 
 
-You do not need to specify the Driver if you have default driver configured in your system. For the
-Official Docker image we have ODBC driver installed, so you need to specify the ODBC driver to use:
+Migrating off MsSQL Server
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. code-block:: text
+As with Airflow 2.9.0 the support of MSSQL has ended, a migration script can help with
+Airflow version 2.7.x or 2.8.x to migrate off SQL-Server. The migration script is available in
+`airflow-mssql-migration repo on Github <https://github.com/apache/airflow-mssql-migration>`_.
 
-    mssql+pyodbc://<user>:<password>@<host>[:port]/<db>[?driver=ODBC+Driver+18+for+SQL+Server]
+Note that the migration script is provided without support and warranty.
 
 
 Other configuration options
 ---------------------------
 
-There are more configuration options for configuring SQLAlchemy behavior. For details, see :ref:`reference documentation <config:core>` for ``sqlalchemy_*`` option in ``[core]`` section.
+There are more configuration options for configuring SQLAlchemy behavior. For details, see :ref:`reference documentation <config:database>` for ``sqlalchemy_*`` option in ``[database]`` section.
+
+For instance, you can specify a database schema where Airflow will create its required tables. If you want Airflow to install its tables in the ``airflow`` schema of a PostgreSQL database, specify these environment variables:
+
+.. code-block:: bash
+
+    export AIRFLOW__DATABASE__SQL_ALCHEMY_CONN="postgresql://postgres@localhost:5432/my_database?options=-csearch_path%3Dairflow"
+    export AIRFLOW__DATABASE__SQL_ALCHEMY_SCHEMA="airflow"
+
+Note the ``search_path`` at the end of the ``SQL_ALCHEMY_CONN`` database URL.
+
 
 Initialize the database
 -----------------------
@@ -346,10 +366,107 @@ After configuring the database and connecting to it in Airflow configuration, yo
 
 .. code-block:: bash
 
-    airflow db init
+    airflow db migrate
+
+Database Monitoring and Maintenance in Airflow
+----------------------------------------------
+
+Airflow extensively utilizes a relational metadata database for task scheduling and execution.
+Monitoring and proper configuration of this database are crucial for optimal Airflow performance.
+
+Key Concerns
+~~~~~~~~~~~~
+
+1. **Performance Impact**: Long or excessive queries can significantly affect Airflow's functionality.
+   These may arise due to workflow specifics, lack of optimizations, or code bugs.
+2. **Database Statistics**: Incorrect optimization decisions by the database engine,
+   often due to outdated data statistics, can degrade performance.
+
+Responsibilities
+~~~~~~~~~~~~~~~~
+
+The responsibilities for database monitoring and maintenance in Airflow environments vary depending on
+whether you're using self-managed databases and Airflow instances or opting for managed services.
+
+**Self-Managed Environments**:
+
+In the setups where both the database and Airflow are self-managed, the Deployment Manager
+is responsible for setting up, configuring, and maintaining the database. This includes monitoring
+its performance, managing backups, periodic cleanups and ensuring its optimal operation with Airflow.
+
+**Managed Services**:
+
+- Managed Database Services: When using managed DB services, many maintenance tasks (like backups,
+  patching, and basic monitoring) are handled by the provider. However, the Deployment Manager still
+  needs to oversee the configuration of Airflow and optimize performance settings specific to their
+  workflows, manages periodic cleanups and monitor their DB to ensure optimal operations with Airflow.
+
+- Managed Airflow Services: With managed Airflow services, those service provider take responsibility
+  for the configuration and maintenance of Airflow and its database. However, the Deployment Manager
+  needs to collaborate with the service configuration to ensure that the sizing and workflow requirements
+  are matching the sizing and configuration of the managed service.
+
+Monitoring Aspects
+~~~~~~~~~~~~~~~~~~
+
+Regular monitoring should include:
+
+- CPU, I/O, and memory usage.
+- Query frequency and number.
+- Identification and logging of slow or long-running queries.
+- Detection of inefficient query execution plans.
+- Analysis of disk swap versus memory usage and cache swapping frequency.
+
+Tools and Strategies
+~~~~~~~~~~~~~~~~~~~~
+
+- Airflow doesn't provide direct tooling for database monitoring.
+- Use server-side monitoring and logging to obtain metrics.
+- Enable tracking of long-running queries based on defined thresholds.
+- Regularly run house-keeping tasks (like ``ANALYZE`` SQL command) for maintenance.
+
+Database Cleaning Tools
+~~~~~~~~~~~~~~~~~~~~~~~
+
+- **Airflow DB Clean Command**: Utilize the ``airflow db clean`` command to help manage and clean
+  up your database.
+- **Python Methods in ``airflow.utils.db_cleanup``**: This module provides additional Python methods for
+  database cleanup and maintenance, offering more fine-grained control and customization for specific needs.
+
+Recommendations
+~~~~~~~~~~~~~~~
+
+- **Proactive Monitoring**: Implement monitoring and logging in production without significantly
+  impacting performance.
+- **Database-Specific Guidance**: Consult the chosen database's documentation for specific monitoring
+  setup instructions.
+- **Managed Database Services**: Check if automatic maintenance tasks are available with your
+  database provider.
+
+SQLAlchemy Logging
+~~~~~~~~~~~~~~~~~~
+
+For detailed query analysis, enable SQLAlchemy client logging (``echo=True`` in SQLAlchemy
+engine configuration).
+
+- This method is more intrusive and can affect Airflow's client-side performance.
+- It generates a lot of logs, especially in a busy Airflow environment.
+- Suitable for non-production environments like staging systems.
+
+You can do it with ``echo=True`` as sqlalchemy engine configuration as explained in the
+`SQLAlchemy logging documentation <https://docs.sqlalchemy.org/en/14/core/engines.html#configuring-logging>`_.
+
+Use :ref:`config:database__sql_alchemy_engine_args` configuration parameter to set echo arg to True.
+
+Caution
+~~~~~~~
+
+- Be mindful of the impact on Airflow's performance and system resources when enabling extensive logging.
+- Prefer server-side monitoring over client-side logging for production environments to minimize
+  performance interference.
 
 What's next?
 ------------
 
 By default, Airflow uses ``SequentialExecutor``, which does not provide parallelism. You should consider
-configuring a different :doc:`executor </executor/index>` for better performance.
+configuring a different :doc:`executor </core-concepts/executor/index>` for better performance.

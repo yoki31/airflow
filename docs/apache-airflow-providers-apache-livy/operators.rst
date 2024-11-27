@@ -29,10 +29,19 @@ LivyOperator
 
 This operator wraps the Apache Livy batch REST API, allowing to submit a Spark application to the underlying cluster.
 
-.. exampleinclude:: /../../airflow/providers/apache/livy/example_dags/example_livy.py
+.. exampleinclude:: /../../providers/tests/system/apache/livy/example_livy.py
     :language: python
     :start-after: [START create_livy]
     :end-before: [END create_livy]
+
+You can also run this operator in deferrable mode by setting the parameter ``deferrable`` to True.
+This will lead to efficient utilization of Airflow workers as polling for job status happens on
+the triggerer asynchronously. Note that this will need triggerer to be available on your Airflow deployment.
+
+.. exampleinclude:: /../../providers/tests/system/apache/livy/example_livy.py
+    :language: python
+    :start-after: [START create_livy_deferrable]
+    :end-before: [END create_livy_deferrable]
 
 Reference
 """""""""

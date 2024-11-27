@@ -22,14 +22,14 @@ Creating a custom Operator
 
 
 Airflow allows you to create new operators to suit the requirements of you or your team.
-The extensibility is one of the many reasons which makes Apache Airflow powerful.
+This extensibility is one of the many features which make Apache Airflow powerful.
 
 You can create any operator you want by extending the :class:`airflow.models.baseoperator.BaseOperator`
 
 There are two methods that you need to override in a derived class:
 
 * Constructor - Define the parameters required for the operator. You only need to specify the arguments specific to your operator.
-  You can specify the ``default_args`` in the dag file. See :ref:`Default args <concepts:default-arguments>` for more details.
+  You can specify the ``default_args`` in the DAG file. See :ref:`Default args <concepts-default-arguments>` for more details.
 
 * Execute - The code to execute when the runner calls the operator. The method contains the
   Airflow context as a parameter that can be used to read config values.
@@ -63,7 +63,7 @@ Let's implement an example ``HelloOperator`` in a new file ``hello_operator.py``
     is present in the :envvar:`PYTHONPATH` env. Airflow adds ``dags/``, ``plugins/``, and ``config/`` directories
     in the Airflow home to :envvar:`PYTHONPATH` by default. e.g., In our example,
     the file is placed in the ``custom_operator/`` directory.
-    See :doc:`../modules_management` for details on how Python and Airflow manage modules.
+    See :doc:`/administration-and-deployment/modules_management` for details on how Python and Airflow manage modules.
 
 You can now use the derived custom operator as follows:
 
@@ -87,14 +87,14 @@ can be reused by other users in different operators. Such approach provides bett
 utilization of added integration than using ``CustomServiceBaseOperator`` for each external service.
 
 Other consideration is the temporary state. If an operation requires an in-memory state (for example
-a job id that should be used in ``on_kill`` method to cancel a request) then the state should be keep
+a job id that should be used in ``on_kill`` method to cancel a request) then the state should be kept
 in the operator not in a hook. In this way the service hook can be completely state-less and whole
 logic of an operation is in one place - in the operator.
 
 .. _custom-operator/hook:
 
 Hooks
-^^^^^
+-----
 Hooks act as an interface to communicate with the external shared resources in a DAG.
 For example, multiple tasks in a DAG can require access to a MySQL database. Instead of
 creating a connection per task, you can retrieve a connection from the hook and utilize it.
@@ -131,20 +131,22 @@ The ``execute`` gets called only during a DAG run.
 
 
 User interface
-^^^^^^^^^^^^^^^
+--------------
 Airflow also allows the developer to control how the operator shows up in the DAG UI.
 Override ``ui_color`` to change the background color of the operator in UI.
 Override ``ui_fgcolor`` to change the color of the label.
+Override ``custom_operator_name`` to change the displayed name to something other than the classname.
 
 .. code-block:: python
 
         class HelloOperator(BaseOperator):
             ui_color = "#ff0000"
             ui_fgcolor = "#000000"
+            custom_operator_name = "Howdy"
             # ...
 
 Templating
-^^^^^^^^^^^
+----------
 You can use :ref:`Jinja templates <concepts:jinja-templating>` to parameterize your operator.
 Airflow considers the field names present in ``template_fields``  for templating while rendering
 the operator.
@@ -152,15 +154,15 @@ the operator.
 .. code-block:: python
 
         class HelloOperator(BaseOperator):
-
             template_fields: Sequence[str] = ("name",)
 
-            def __init__(self, name: str, **kwargs) -> None:
+            def __init__(self, name: str, world: str, **kwargs) -> None:
                 super().__init__(**kwargs)
                 self.name = name
+                self.world = world
 
             def execute(self, context):
-                message = f"Hello from {self.name}"
+                message = f"Hello {self.world} it's {self.name}!"
                 print(message)
                 return message
 
@@ -170,7 +172,9 @@ You can use the template as follows:
 
         with dag:
             hello_task = HelloOperator(
-                task_id="task_id_1", dag=dag, name="{{ task_instance.task_id }}"
+                task_id="task_id_1",
+                name="{{ task_instance.task_id }}",
+                world="Earth",
             )
 
 In this example, Jinja looks for the ``name`` parameter and substitutes ``{{ task_instance.task_id }}`` with
@@ -185,7 +189,6 @@ with actual value. Note that Jinja substitutes the operator attributes and not t
 .. code-block:: python
 
         class HelloOperator(BaseOperator):
-
             template_fields: Sequence[str] = ("guest_name",)
             template_ext = ".sql"
 
@@ -232,7 +235,6 @@ Then using this template as follows:
             config_task = MyConfigOperator(
                 task_id="task_id_1",
                 configuration={"query": {"job_id": "123", "sql": "select * from my_table"}},
-                dag=dag,
             )
 
 This will result in the UI rendering ``configuration`` as json in addition to the value contained in the
@@ -267,15 +269,145 @@ Currently available lexers:
 
 If you use a non-existing lexer then the value of the template field will be rendered as a pretty-printed object.
 
-Define an operator extra link
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Limitations
+^^^^^^^^^^^
+To prevent misuse, the following limitations must be observed when defining and assigning templated fields in the
+operator's constructor (when such exists, otherwise - see below):
 
-For your operator, you can :doc:`Define an extra link <define_extra_link>` that can
+1. Templated fields' corresponding parameters passed into the constructor must be named exactly
+as the fields. The following example is invalid, as the parameter passed into the constructor is not the same as the
+templated field:
+
+.. code-block:: python
+
+        class HelloOperator(BaseOperator):
+            template_fields = "foo"
+
+            def __init__(self, foo_id) -> None:  # should be def __init__(self, foo) -> None
+                self.foo = foo_id  # should be self.foo = foo
+
+2. Templated fields' instance members must be assigned with their corresponding parameter from the constructor,
+either by a direct assignment or by calling the parent's constructor (in which these fields are
+defined as ``template_fields``) with explicit an assignment of the parameter.
+The following example is invalid, as the instance member ``self.foo`` is not assigned at all, despite being a
+templated field:
+
+.. code-block:: python
+
+        class HelloOperator(BaseOperator):
+            template_fields = ("foo", "bar")
+
+            def __init__(self, foo, bar) -> None:
+                self.bar = bar
+
+
+The following example is also invalid, as the instance member ``self.foo`` of ``MyHelloOperator`` is initialized
+implicitly as part of the ``kwargs`` passed to its parent constructor:
+
+.. code-block:: python
+
+        class HelloOperator(BaseOperator):
+            template_fields = "foo"
+
+            def __init__(self, foo) -> None:
+                self.foo = foo
+
+
+        class MyHelloOperator(HelloOperator):
+            template_fields = ("foo", "bar")
+
+            def __init__(self, bar, **kwargs) -> None:  # should be def __init__(self, foo, bar, **kwargs)
+                super().__init__(**kwargs)  # should be super().__init__(foo=foo, **kwargs)
+                self.bar = bar
+
+3. Applying actions on the parameter during the assignment in the constructor is not allowed.
+Any action on the value should be applied in the ``execute()`` method.
+Therefore, the following example is invalid:
+
+.. code-block:: python
+
+        class HelloOperator(BaseOperator):
+            template_fields = "foo"
+
+            def __init__(self, foo) -> None:
+                self.foo = foo.lower()  # assignment should be only self.foo = foo
+
+When an operator inherits from a base operator and does not have a constructor defined on its own, the limitations above
+do not apply. However, the templated fields must be set properly in the parent according to those limitations.
+
+Thus, the following example is valid:
+
+.. code-block:: python
+
+        class HelloOperator(BaseOperator):
+            template_fields = "foo"
+
+            def __init__(self, foo) -> None:
+                self.foo = foo
+
+
+        class MyHelloOperator(HelloOperator):
+            template_fields = "foo"
+
+The limitations above are enforced by a pre-commit named 'validate-operators-init'.
+
+Add template fields with subclassing
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+A common use case for creating a custom operator is for simply augmenting existing ``template_fields``.
+There might be a situation is which an operator you wish to use doesn't define certain parameters as
+templated, but you'd like to be able to dynamically pass an argument as a Jinja expression. This can easily be
+achieved with a quick subclassing of the existing operator.
+
+Let's assume you want to use the ``HelloOperator`` defined earlier:
+
+.. code-block:: python
+
+        class HelloOperator(BaseOperator):
+            template_fields: Sequence[str] = ("name",)
+
+            def __init__(self, name: str, world: str, **kwargs) -> None:
+                super().__init__(**kwargs)
+                self.name = name
+                self.world = world
+
+            def execute(self, context):
+                message = f"Hello {self.world} it's {self.name}!"
+                print(message)
+                return message
+
+However, you'd like to dynamically parameterize ``world`` arguments. Because the ``template_fields`` property
+is guaranteed to be a ``Sequence[str]`` type (i.e. a list or tuple of strings), you can subclass the
+``HelloOperator`` to modify the ``template_fields`` as desired easily.
+
+.. code-block:: python
+
+    class MyHelloOperator(HelloOperator):
+        template_fields: Sequence[str] = (*HelloOperator.template_fields, "world")
+
+Now you can use ``MyHelloOperator`` like this:
+
+.. code-block:: python
+
+    with dag:
+        hello_task = MyHelloOperator(
+            task_id="task_id_1",
+            name="{{ task_instance.task_id }}",
+            world="{{ var.value.my_world }}",
+        )
+
+In this example, the ``world`` argument will be dynamically set to the value of an Airflow Variable named
+"my_world" via a Jinja expression.
+
+
+Define an operator extra link
+------------------------------
+
+For your operator, you can :doc:`Define an extra link <define-extra-link>` that can
 redirect users to external systems. For example, you can add a link that redirects
 the user to the operator's manual.
 
 Sensors
-^^^^^^^^
+-------
 Airflow provides a primitive for a special kind of operator, whose purpose is to
 poll some state (e.g. presence of a file) on a regular interval until a
 success criteria is met.

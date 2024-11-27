@@ -27,7 +27,7 @@ The Google Cloud connection type enables the Google Cloud Integrations.
 Authenticating to Google Cloud
 ------------------------------
 
-There are two ways to connect to Google Cloud using Airflow.
+There are three ways to connect to Google Cloud using Airflow:
 
 1. Using a `Application Default Credentials
    <https://google-auth.readthedocs.io/en/latest/reference/google.auth.html#google.auth.default>`_,
@@ -36,6 +36,11 @@ There are two ways to connect to Google Cloud using Airflow.
    Key can be specified as a path to the key file (``Keyfile Path``), as a key payload (``Keyfile JSON``)
    or as secret in Secret Manager (``Keyfile secret name``). Only one way of defining the key can be used at a time.
    If you need to manage multiple keys then you should configure multiple connections.
+3. Using a `credential configuration file <https://googleapis.dev/python/google-auth/2.9.0/user-guide.html#external-credentials-workload-identity-federation>`_,
+   by specifying the path to or the content of a valid credential configuration file.
+   A credential configuration file is a configuration file that typically contains non-sensitive metadata to instruct
+   the ``google-auth`` library on how to retrieve external subject tokens and exchange them for service account access
+   tokens.
 
    .. warning:: Additional permissions might be needed
 
@@ -77,6 +82,8 @@ For example:
 
    export AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT='google-cloud-platform://'
 
+.. _howto/connection:gcp:configuring_the_connection:
+
 Configuring the Connection
 --------------------------
 
@@ -98,6 +105,11 @@ Keyfile JSON
 
     Not required if using application default credentials.
 
+Credential Configuration File
+    Credential configuration file JSON or path to a credential configuration file on the filesystem.
+
+    Not required if using application default credentials.
+
 Secret name which holds Keyfile JSON
     Name of the secret in Secret Manager which contains a `service account
     <https://cloud.google.com/docs/authentication/#service_accounts>`_ key.
@@ -115,6 +127,16 @@ Number of Retries
     represents the last request. If zero (default), we attempt the
     request only once.
 
+Impersonation Chain
+    Optional service account to impersonate using short-term
+    credentials, or chained list of accounts required to get the access_token
+    of the last account in the list, which will be impersonated in all requests leveraging this connection.
+    If set as a string, the account must grant the originating account
+    the Service Account Token Creator IAM role.
+    If set as a comma-separated list, the identities from the list must grant
+    Service Account Token Creator IAM role to the directly preceding identity, with first
+    account from the list granting this role to the originating account.
+
     When specifying the connection in environment variable you should specify
     it using URI syntax, with the following requirements:
 
@@ -124,20 +146,28 @@ Number of Retries
       * query parameters contains information specific to this type of
         connection. The following keys are accepted:
 
-        * ``extra__google_cloud_platform__project`` - Project Id
-        * ``extra__google_cloud_platform__key_path`` - Keyfile Path
-        * ``extra__google_cloud_platform__keyfile_dict`` - Keyfile JSON
-        * ``extra__google_cloud_platform__key_secret_name`` - Secret name which holds Keyfile JSON
-        * ``extra__google_cloud_platform__scope`` - Scopes
-        * ``extra__google_cloud_platform__num_retries`` - Number of Retries
+        * ``project`` - Project Id
+        * ``key_path`` - Keyfile Path
+        * ``keyfile_dict`` - Keyfile JSON
+        * ``key_secret_name`` - Secret name which holds Keyfile JSON
+        * ``key_secret_project_id`` - Project Id which holds Keyfile JSON
+        * ``scope`` - Scopes
+        * ``num_retries`` - Number of Retries
+
 
     Note that all components of the URI should be URL-encoded.
 
-    For example:
+    For example, with URI format:
 
     .. code-block:: bash
 
-       export AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT='google-cloud-platform://?extra__google_cloud_platform__key_path=%2Fkeys%2Fkey.json&extra__google_cloud_platform__scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform&extra__google_cloud_platform__project=airflow&extra__google_cloud_platform__num_retries=5'
+       export AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT='google-cloud-platform://?key_path=%2Fkeys%2Fkey.json&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform&project=airflow&num_retries=5'
+
+    And using JSON format:
+
+    .. code-block:: bash
+
+       export AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT='{"conn_type": "google_cloud_platform", "extra": {"key_path": "/keys/key.json", "scope": "https://www.googleapis.com/auth/cloud-platform", "project": "airflow", "num_retries": 5}}'
 
 .. _howto/connection:gcp:impersonation:
 
@@ -148,6 +178,8 @@ Google operators support `direct impersonation of a service account
 <https://cloud.google.com/iam/docs/understanding-service-accounts#directly_impersonating_a_service_account>`_
 via ``impersonation_chain`` argument (``google_impersonation_chain`` in case of operators
 that also communicate with services of other cloud providers).
+The impersonation chain can also be configured directly on the Google Cloud Connection
+as described above, though the ``impersonation_chain`` passed to the operator takes precedence.
 
 For example:
 
@@ -174,11 +206,6 @@ In order for this example to work, the account ``impersonated_account`` must gra
 ``google_cloud_default`` Connection. This will allow to generate ``impersonated_account``'s
 access token, which will allow to act on its behalf using its permissions. ``impersonated_account``
 does not even need to have a generated key.
-
-.. warning::
-  :class:`~airflow.providers.google.cloud.operators.dataflow.DataflowCreateJavaJobOperator` and
-  :class:`~airflow.providers.google.cloud.operators.dataflow.DataflowCreatePythonJobOperator`
-  do not support direct impersonation as of now.
 
 In case of operators that connect to multiple Google services, all hooks use the same value of
 ``impersonation_chain`` (if applicable). You can also impersonate accounts from projects
@@ -247,3 +274,38 @@ following value for ``impersonation_chain`` argument...
         ]
 
 ...then requests will be executed using ``impersonation-chain-4`` account's privileges.
+
+
+Domain-wide delegation
+-----------------------------------------
+Some Google operators, hooks and sensors support `domain-wide delegation <https://developers.google.com/cloud-search/docs/guides/delegation>`_, in addition to direct impersonation of a service account.
+Delegation allows a user or service account to grant another service account the ability to act on their behalf.
+This means that the user or service account that is delegating their permissions can continue to access and manage their own resources, while the delegated service account can also access and manage those resources.
+
+For example:
+
+.. code-block:: python
+
+        PROJECT_ID = os.environ.get("TF_VAR_project_id", "your_project_id")
+
+        SPREADSHEET = {
+            "properties": {"title": "Test1"},
+            "sheets": [{"properties": {"title": "Sheet1"}}],
+        }
+
+        from airflow.providers.google.suite.operators.sheets import (
+            GoogleSheetsCreateSpreadsheetOperator,
+        )
+
+        create_spreadsheet_operator = GoogleSheetsCreateSpreadsheetOperator(
+            task_id="create-spreadsheet",
+            gcp_conn_id="google_cloud_default",
+            spreadsheet=SPREADSHEET,
+            impersonation_chain=f"projects/-/serviceAccounts/SA@{PROJECT_ID}.iam.gserviceaccount.com",
+        )
+
+Note that as domain-wide delegation is currently supported by most of the Google operators and hooks, its usage should be limited only to Google Workspace (gsuite) and marketing platform operators and hooks or by accessing these services through the GoogleDiscoveryAPI hook. It is deprecated in the following usages:
+
+* All of Google Cloud operators and hooks.
+* Firebase hooks.
+* All transfer operators that involve Google cloud in different providers, for example: :class:`airflow.providers.amazon.aws.transfers.gcs_to_s3.GCSToS3Operator`.

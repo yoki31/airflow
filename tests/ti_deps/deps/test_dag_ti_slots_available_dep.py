@@ -15,23 +15,26 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
-
-import unittest
 from unittest.mock import Mock
+
+import pytest
 
 from airflow.models import TaskInstance
 from airflow.ti_deps.deps.dag_ti_slots_available_dep import DagTISlotsAvailableDep
 
+pytestmark = [pytest.mark.db_test, pytest.mark.skip_if_database_isolation_mode]
 
-class TestDagTISlotsAvailableDep(unittest.TestCase):
+
+class TestDagTISlotsAvailableDep:
     def test_concurrency_reached(self):
         """
         Test max_active_tasks reached should fail dep
         """
         dag = Mock(concurrency=1, get_concurrency_reached=Mock(return_value=True))
         task = Mock(dag=dag, pool_slots=1)
-        ti = TaskInstance(task, execution_date=None)
+        ti = TaskInstance(task)
 
         assert not DagTISlotsAvailableDep().is_met(ti=ti)
 
@@ -41,6 +44,6 @@ class TestDagTISlotsAvailableDep(unittest.TestCase):
         """
         dag = Mock(concurrency=1, get_concurrency_reached=Mock(return_value=False))
         task = Mock(dag=dag, pool_slots=1)
-        ti = TaskInstance(task, execution_date=None)
+        ti = TaskInstance(task)
 
         assert DagTISlotsAvailableDep().is_met(ti=ti)

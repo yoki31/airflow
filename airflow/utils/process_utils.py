@@ -15,8 +15,10 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-#
-"""Utilities for running or stopping processes"""
+"""Utilities for running or stopping processes."""
+
+from __future__ import annotations
+
 import errno
 import logging
 import os
@@ -29,12 +31,12 @@ import sys
 from airflow.utils.platform import IS_WINDOWS
 
 if not IS_WINDOWS:
-    import tty
-    import termios
     import pty
+    import termios
+    import tty
 
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Dict, List, Optional
 
 import psutil
 from lockfile.pidlockfile import PIDLockFile
@@ -46,23 +48,26 @@ log = logging.getLogger(__name__)
 
 # When killing processes, time to wait after issuing a SIGTERM before issuing a
 # SIGKILL.
-DEFAULT_TIME_TO_WAIT_AFTER_SIGTERM = conf.getint('core', 'KILLED_TASK_CLEANUP_TIME')
+DEFAULT_TIME_TO_WAIT_AFTER_SIGTERM = conf.getint("core", "KILLED_TASK_CLEANUP_TIME")
 
 
 def reap_process_group(
     process_group_id: int,
     logger,
-    sig: 'signal.Signals' = signal.SIGTERM,
+    sig: signal.Signals = signal.SIGTERM,
     timeout: int = DEFAULT_TIME_TO_WAIT_AFTER_SIGTERM,
-) -> Dict[int, int]:
+) -> dict[int, int]:
     """
+    Send sig (SIGTERM) to the process group of pid.
+
     Tries really hard to terminate all processes in the group (including grandchildren). Will send
     sig (SIGTERM) to the process group of pid. If any process is alive after timeout
     a SIGKILL will be send.
 
     :param process_group_id: process group id to kill.
-           The process that wants to create the group should run `os.setpgid(0, 0)` as the first
-           command it executes which will set group id = process_id. Effectively the process that is the
+           The process that wants to create the group should run
+           `airflow.utils.process_utils.set_new_process_group()` as the first command
+           it executes which will set group id = process_id. Effectively the process that is the
            "root" of the group has pid = gid and all other processes in the group have different
            pids but the same gid (equal the pid of the root process)
     :param logger: log handler
@@ -76,6 +81,8 @@ def reap_process_group(
         returncodes[p.pid] = p.returncode
 
     def signal_procs(sig):
+        if IS_WINDOWS:
+            return
         try:
             logger.info("Sending the signal %s to group %s", sig, process_group_id)
             os.killpg(process_group_id, sig)
@@ -88,7 +95,7 @@ def reap_process_group(
                     + [str(p.pid) for p in all_processes_in_the_group]
                 )
             elif err_killpg.errno == errno.ESRCH:
-                # There is a rare condition that the process has not managed yet to change it's process
+                # There is a rare condition that the process has not managed yet to change its process
                 # group. In this case os.killpg fails with ESRCH error
                 # So we additionally send a kill signal to the process itself.
                 logger.info(
@@ -104,7 +111,7 @@ def reap_process_group(
             else:
                 raise
 
-    if process_group_id == os.getpgid(0):
+    if not IS_WINDOWS and process_group_id == os.getpgid(0):
         raise RuntimeError("I refuse to kill myself")
 
     try:
@@ -113,7 +120,7 @@ def reap_process_group(
         all_processes_in_the_group = parent.children(recursive=True)
         all_processes_in_the_group.append(parent)
     except psutil.NoSuchProcess:
-        # The process already exited, but maybe it's children haven't.
+        # The process already exited, but maybe its children haven't.
         all_processes_in_the_group = []
         for proc in psutil.process_iter():
             try:
@@ -155,21 +162,35 @@ def reap_process_group(
     return returncodes
 
 
-def execute_in_subprocess(cmd: List[str], cwd: Optional[str] = None) -> None:
+def execute_in_subprocess(cmd: list[str], cwd: str | None = None, env: dict | None = None) -> None:
     """
-    Execute a process and stream output to logger
+    Execute a process and stream output to logger.
 
     :param cmd: command and arguments to run
     :param cwd: Current working directory passed to the Popen constructor
+    :param env: Additional environment variables to set for the subprocess. If None,
+        the subprocess will inherit the current environment variables of the parent process
+        (``os.environ``)
+    """
+    execute_in_subprocess_with_kwargs(cmd, cwd=cwd, env=env)
+
+
+def execute_in_subprocess_with_kwargs(cmd: list[str], **kwargs) -> None:
+    """
+    Execute a process and stream output to logger.
+
+    :param cmd: command and arguments to run
+
+    All other keyword args will be passed directly to subprocess.Popen
     """
     log.info("Executing cmd: %s", " ".join(shlex.quote(c) for c in cmd))
     with subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0, close_fds=True, cwd=cwd
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0, close_fds=True, **kwargs
     ) as proc:
         log.info("Output:")
         if proc.stdout:
             with proc.stdout:
-                for line in iter(proc.stdout.readline, b''):
+                for line in iter(proc.stdout.readline, b""):
                     log.info("%s", line.decode().rstrip())
 
         exit_code = proc.wait()
@@ -177,8 +198,10 @@ def execute_in_subprocess(cmd: List[str], cwd: Optional[str] = None) -> None:
         raise subprocess.CalledProcessError(exit_code, cmd)
 
 
-def execute_interactive(cmd: List[str], **kwargs) -> None:
+def execute_interactive(cmd: list[str], **kwargs) -> None:
     """
+    Run the new command as a subprocess.
+
     Runs the new command as a subprocess and ensures that the terminal's state is restored to its original
     state after the process is completed e.g. if the subprocess hides the cursor, it will be restored after
     the process is completed.
@@ -186,12 +209,12 @@ def execute_interactive(cmd: List[str], **kwargs) -> None:
     log.info("Executing cmd: %s", " ".join(shlex.quote(c) for c in cmd))
 
     old_tty = termios.tcgetattr(sys.stdin)
-    tty.setraw(sys.stdin.fileno())
+    old_sigint_handler = signal.getsignal(signal.SIGINT)
+    tty.setcbreak(sys.stdin.fileno())
 
     # open pseudo-terminal to interact with subprocess
     primary_fd, secondary_fd = pty.openpty()
     try:
-        # use os.setsid() make it run in a new process group, or bash job control will not be enabled
         with subprocess.Popen(
             cmd,
             stdin=secondary_fd,
@@ -200,8 +223,10 @@ def execute_interactive(cmd: List[str], **kwargs) -> None:
             universal_newlines=True,
             **kwargs,
         ) as proc:
+            # ignore SIGINT in the parent process
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
             while proc.poll() is None:
-                readable_fbs, _, _ = select.select([sys.stdin, primary_fd], [], [])
+                readable_fbs, _, _ = select.select([sys.stdin, primary_fd], [], [], 0)
                 if sys.stdin in readable_fbs:
                     input_data = os.read(sys.stdin.fileno(), 10240)
                     os.write(primary_fd, input_data)
@@ -211,10 +236,11 @@ def execute_interactive(cmd: List[str], **kwargs) -> None:
                         os.write(sys.stdout.fileno(), output_data)
     finally:
         # restore tty settings back
+        signal.signal(signal.SIGINT, old_sigint_handler)
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_tty)
 
 
-def kill_child_processes_by_pids(pids_to_kill: List[int], timeout: int = 5) -> None:
+def kill_child_processes_by_pids(pids_to_kill: list[int], timeout: int = 5) -> None:
     """
     Kills child processes for the current process.
 
@@ -258,13 +284,14 @@ def kill_child_processes_by_pids(pids_to_kill: List[int], timeout: int = 5) -> N
 
 
 @contextmanager
-def patch_environ(new_env_variables: Dict[str, str]):
+def patch_environ(new_env_variables: dict[str, str]) -> Generator[None, None, None]:
     """
-    Sets environment variables in context. After leaving the context, it restores its original state.
+    Set environment variables in context.
 
+    After leaving the context, it restores its original state.
     :param new_env_variables: Environment variables to set
     """
-    current_env_state = {key: os.environ.get(key) for key in new_env_variables.keys()}
+    current_env_state = {key: os.environ.get(key) for key in new_env_variables}
     os.environ.update(new_env_variables)
     try:
         yield
@@ -279,7 +306,8 @@ def patch_environ(new_env_variables: Dict[str, str]):
 
 def check_if_pidfile_process_is_running(pid_file: str, process_name: str):
     """
-    Checks if a pidfile already exists and process is still running.
+    Check if a pidfile already exists and process is still running.
+
     If process is dead then pidfile is removed.
 
     :param pid_file: path to the pidfile
@@ -301,3 +329,20 @@ def check_if_pidfile_process_is_running(pid_file: str, process_name: str):
         except psutil.NoSuchProcess:
             # If process is dead remove the pidfile
             pid_lock_file.break_lock()
+
+
+def set_new_process_group() -> None:
+    """
+    Try to set current process to a new process group.
+
+    That makes it easy to kill all sub-process of this at the OS-level,
+    rather than having to iterate the child processes.
+
+    If current process was spawned by system call ``exec()``, the current
+    process group is kept.
+    """
+    if os.getpid() == os.getsid(0):
+        # If PID = SID than process a session leader, and it is not possible to change process group
+        return
+
+    os.setpgid(0, 0)

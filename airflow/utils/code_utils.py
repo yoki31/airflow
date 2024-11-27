@@ -14,18 +14,17 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
 import functools
 import inspect
 import os
-from typing import Any, Optional
-
-from pygments.formatters.terminal import TerminalFormatter
-from pygments.formatters.terminal256 import Terminal256Formatter
+from pathlib import Path
+from typing import Any
 
 
-def get_python_source(x: Any) -> Optional[str]:
-    """Helper function to get Python source (or not), preventing exceptions"""
+def get_python_source(x: Any) -> str | None:
+    """Get Python source (or not), preventing exceptions."""
     if isinstance(x, str):
         return x
 
@@ -50,7 +49,7 @@ def get_python_source(x: Any) -> Optional[str]:
             pass
 
     if source_code is None:
-        source_code = f'No source code available for {type(x)}'
+        source_code = f"No source code available for {type(x)}"
     return source_code
 
 
@@ -58,33 +57,34 @@ def prepare_code_snippet(file_path: str, line_no: int, context_lines_count: int 
     """
     Prepare code snippet with line numbers and  a specific line marked.
 
-    :param file_path: File nam
+    :param file_path: File name
     :param line_no: Line number
     :param context_lines_count: The number of lines that will be cut before and after.
     :return: str
     """
-    with open(file_path) as text_file:
-        # Highlight code
-        code = text_file.read()
-        code_lines = code.split("\n")
-        # Prepend line number
-        code_lines = [
-            f">{lno:3} | {line}" if line_no == lno else f"{lno:4} | {line}"
-            for lno, line in enumerate(code_lines, 1)
-        ]
-        # # Cut out the snippet
-        start_line_no = max(0, line_no - context_lines_count - 1)
-        end_line_no = line_no + context_lines_count
-        code_lines = code_lines[start_line_no:end_line_no]
-        # Join lines
-        code = "\n".join(code_lines)
+    code_lines = Path(file_path).read_text().splitlines()
+    # Prepend line number
+    code_lines = [
+        f">{lno:3} | {line}" if line_no == lno else f"{lno:4} | {line}"
+        for lno, line in enumerate(code_lines, 1)
+    ]
+    # # Cut out the snippet
+    start_line_no = max(0, line_no - context_lines_count - 1)
+    end_line_no = line_no + context_lines_count
+    code_lines = code_lines[start_line_no:end_line_no]
+    # Join lines
+    code = "\n".join(code_lines)
     return code
 
 
 def get_terminal_formatter(**opts):
-    """Returns the best formatter available in the current terminal."""
-    if '256' in os.environ.get('TERM', ''):
+    """Return the best formatter available in the current terminal."""
+    if "256" in os.environ.get("TERM", ""):
+        from pygments.formatters.terminal256 import Terminal256Formatter
+
         formatter = Terminal256Formatter(**opts)
     else:
+        from pygments.formatters.terminal import TerminalFormatter
+
         formatter = TerminalFormatter(**opts)
     return formatter

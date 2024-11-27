@@ -14,39 +14,39 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from typing import List, NamedTuple
+from __future__ import annotations
+
+from typing import NamedTuple
 
 from marshmallow import Schema, fields
 from marshmallow_sqlalchemy import SQLAlchemySchema, auto_field
 
-from airflow.models.errors import ImportError
+from airflow.models.errors import ParseImportError
 
 
 class ImportErrorSchema(SQLAlchemySchema):
-    """Import error schema"""
+    """Import error schema."""
 
     class Meta:
-        """Meta"""
+        """Meta."""
 
-        model = ImportError
+        model = ParseImportError
 
     import_error_id = auto_field("id", dump_only=True)
-    timestamp = auto_field(format="iso")
-    filename = auto_field()
-    stack_trace = auto_field(
-        "stacktrace",
-    )
+    timestamp = auto_field(format="iso", dump_only=True)
+    filename = auto_field(dump_only=True)
+    stack_trace = auto_field("stacktrace", dump_only=True)
 
 
 class ImportErrorCollection(NamedTuple):
-    """List of import errors with metadata"""
+    """List of import errors with metadata."""
 
-    import_errors: List[ImportError]
+    import_errors: list[ParseImportError]
     total_entries: int
 
 
 class ImportErrorCollectionSchema(Schema):
-    """Import error collection schema"""
+    """Import error collection schema."""
 
     import_errors = fields.List(fields.Nested(ImportErrorSchema))
     total_entries = fields.Int()

@@ -15,11 +15,13 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
+
 from airflow.ti_deps.deps.base_ti_dep import BaseTIDep
 
 
 class MappedTaskIsExpanded(BaseTIDep):
-    """Checks that a mapped task has been expanded before it's TaskInstance can run."""
+    """Checks that a mapped task has been expanded before its TaskInstance can run."""
 
     NAME = "Task has been mapped"
     IGNORABLE = False

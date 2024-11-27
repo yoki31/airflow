@@ -15,10 +15,9 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-import logging
-from typing import Optional
+from __future__ import annotations
 
-from cryptography.fernet import Fernet, MultiFernet
+import logging
 
 from airflow.configuration import conf
 from airflow.exceptions import AirflowException
@@ -28,23 +27,22 @@ log = logging.getLogger(__name__)
 
 
 class FernetProtocol(Protocol):
-    """This class is only used for TypeChecking (for IDEs, mypy, etc)"""
+    """This class is only used for TypeChecking (for IDEs, mypy, etc)."""
 
     def decrypt(self, b):
-        """Decrypt with Fernet"""
+        """Decrypt with Fernet."""
 
     def encrypt(self, b):
-        """Encrypt with Fernet"""
+        """Encrypt with Fernet."""
 
 
 class NullFernet:
     """
-    A "Null" encryptor class that doesn't encrypt or decrypt but that presents
-    a similar interface to Fernet.
+    A "Null" encryptor class that doesn't encrypt or decrypt but that presents a similar interface to Fernet.
 
     The purpose of this is to make the rest of the code not have to know the
     difference, and to only display the message once, not 20 times when
-    `airflow db init` is ran.
+    `airflow db migrate` is run.
     """
 
     is_encrypted = False
@@ -58,7 +56,7 @@ class NullFernet:
         return b
 
 
-_fernet = None  # type: Optional[FernetProtocol]
+_fernet: FernetProtocol | None = None
 
 
 def get_fernet():
@@ -71,19 +69,21 @@ def get_fernet():
     :return: Fernet object
     :raises: airflow.exceptions.AirflowException if there's a problem trying to load Fernet
     """
+    from cryptography.fernet import Fernet, MultiFernet
+
     global _fernet
 
     if _fernet:
         return _fernet
 
     try:
-        fernet_key = conf.get('core', 'FERNET_KEY')
+        fernet_key = conf.get("core", "FERNET_KEY")
         if not fernet_key:
             log.warning("empty cryptography key - values will not be stored encrypted.")
             _fernet = NullFernet()
         else:
             _fernet = MultiFernet(
-                [Fernet(fernet_part.encode('utf-8')) for fernet_part in fernet_key.split(',')]
+                [Fernet(fernet_part.encode("utf-8")) for fernet_part in fernet_key.split(",")]
             )
             _fernet.is_encrypted = True
     except (ValueError, TypeError) as value_error:

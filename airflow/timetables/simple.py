@@ -14,26 +14,38 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from collections.abc import Collection, Sequence
+from typing import TYPE_CHECKING, Any
 
-from pendulum import DateTime
+from airflow.sdk.definitions.asset import AssetAlias, AssetAliasCondition
+from airflow.timetables.base import DagRunInfo, DataInterval, Timetable
+from airflow.utils import timezone
 
-from airflow.timetables.base import DagRunInfo, DataInterval, TimeRestriction, Timetable
+if TYPE_CHECKING:
+    from pendulum import DateTime
+    from sqlalchemy import Session
+
+    from airflow.models.asset import AssetEvent
+    from airflow.sdk.definitions.asset import BaseAsset
+    from airflow.timetables.base import TimeRestriction
+    from airflow.utils.types import DagRunType
 
 
 class _TrivialTimetable(Timetable):
     """Some code reuse for "trivial" timetables that has nothing complex."""
 
     periodic = False
-    can_run = False
+    run_ordering: Sequence[str] = ("logical_date",)
 
     @classmethod
-    def deserialize(cls, data: Dict[str, Any]) -> "Timetable":
+    def deserialize(cls, data: dict[str, Any]) -> Timetable:
         return cls()
 
     def __eq__(self, other: Any) -> bool:
-        """As long as *other* is of the same type.
+        """
+        As long as *other* is of the same type.
 
         This is only for testing purposes and should not be relied on otherwise.
         """
@@ -41,7 +53,7 @@ class _TrivialTimetable(Timetable):
             return NotImplemented
         return True
 
-    def serialize(self) -> Dict[str, Any]:
+    def serialize(self) -> dict[str, Any]:
         return {}
 
     def infer_manual_data_interval(self, *, run_after: DateTime) -> DataInterval:
@@ -49,11 +61,13 @@ class _TrivialTimetable(Timetable):
 
 
 class NullTimetable(_TrivialTimetable):
-    """Timetable that never schedules anything.
+    """
+    Timetable that never schedules anything.
 
-    This corresponds to ``schedule_interval=None``.
+    This corresponds to ``schedule=None``.
     """
 
+    can_be_scheduled = False
     description: str = "Never, external triggers only"
 
     @property
@@ -63,16 +77,17 @@ class NullTimetable(_TrivialTimetable):
     def next_dagrun_info(
         self,
         *,
-        last_automated_data_interval: Optional[DataInterval],
+        last_automated_data_interval: DataInterval | None,
         restriction: TimeRestriction,
-    ) -> Optional[DagRunInfo]:
+    ) -> DagRunInfo | None:
         return None
 
 
 class OnceTimetable(_TrivialTimetable):
-    """Timetable that schedules the execution once as soon as possible.
+    """
+    Timetable that schedules the execution once as soon as possible.
 
-    This corresponds to ``schedule_interval="@once"``.
+    This corresponds to ``schedule="@once"``.
     """
 
     description: str = "Once, as soon as possible"
@@ -84,17 +99,138 @@ class OnceTimetable(_TrivialTimetable):
     def next_dagrun_info(
         self,
         *,
-        last_automated_data_interval: Optional[DataInterval],
+        last_automated_data_interval: DataInterval | None,
         restriction: TimeRestriction,
-    ) -> Optional[DagRunInfo]:
+    ) -> DagRunInfo | None:
         if last_automated_data_interval is not None:
             return None  # Already run, no more scheduling.
         if restriction.earliest is None:  # No start date, won't run.
             return None
         # "@once" always schedule to the start_date determined by the DAG and
         # tasks, regardless of catchup or not. This has been the case since 1.10
-        # and we're inheriting it. See AIRFLOW-1928.
+        # and we're inheriting it.
         run_after = restriction.earliest
         if restriction.latest is not None and run_after > restriction.latest:
             return None
         return DagRunInfo.exact(run_after)
+
+
+class ContinuousTimetable(_TrivialTimetable):
+    """
+    Timetable that schedules continually, while still respecting start_date and end_date.
+
+    This corresponds to ``schedule="@continuous"``.
+    """
+
+    description: str = "As frequently as possible, but only one run at a time."
+
+    active_runs_limit = 1  # Continuous DAGRuns should be constrained to one run at a time
+
+    @property
+    def summary(self) -> str:
+        return "@continuous"
+
+    def next_dagrun_info(
+        self,
+        *,
+        last_automated_data_interval: DataInterval | None,
+        restriction: TimeRestriction,
+    ) -> DagRunInfo | None:
+        if restriction.earliest is None:  # No start date, won't run.
+            return None
+        if last_automated_data_interval is not None:  # has already run once
+            start = last_automated_data_interval.end
+            end = timezone.coerce_datetime(timezone.utcnow())
+        else:  # first run
+            start = restriction.earliest
+            end = max(
+                restriction.earliest, timezone.coerce_datetime(timezone.utcnow())
+            )  # won't run any earlier than start_date
+
+        if restriction.latest is not None and end > restriction.latest:
+            return None
+
+        return DagRunInfo.interval(start, end)
+
+
+class AssetTriggeredTimetable(_TrivialTimetable):
+    """
+    Timetable that never schedules anything.
+
+    This should not be directly used anywhere, but only set if a DAG is triggered by assets.
+
+    :meta private:
+    """
+
+    UNRESOLVED_ALIAS_SUMMARY = "Unresolved AssetAlias"
+
+    description: str = "Triggered by assets"
+
+    def __init__(self, assets: BaseAsset) -> None:
+        super().__init__()
+        self.asset_condition = assets
+        if isinstance(self.asset_condition, AssetAlias):
+            self.asset_condition = AssetAliasCondition(self.asset_condition.name)
+
+        if not next(self.asset_condition.iter_assets(), False):
+            self._summary = AssetTriggeredTimetable.UNRESOLVED_ALIAS_SUMMARY
+        else:
+            self._summary = "Asset"
+
+    @classmethod
+    def deserialize(cls, data: dict[str, Any]) -> Timetable:
+        from airflow.serialization.serialized_objects import decode_asset_condition
+
+        return cls(decode_asset_condition(data["asset_condition"]))
+
+    @property
+    def summary(self) -> str:
+        return self._summary
+
+    def serialize(self) -> dict[str, Any]:
+        from airflow.serialization.serialized_objects import encode_asset_condition
+
+        return {"asset_condition": encode_asset_condition(self.asset_condition)}
+
+    def generate_run_id(
+        self,
+        *,
+        run_type: DagRunType,
+        logical_date: DateTime,
+        data_interval: DataInterval | None,
+        session: Session | None = None,
+        events: Collection[AssetEvent] | None = None,
+        **extra,
+    ) -> str:
+        from airflow.models.dagrun import DagRun
+
+        return DagRun.generate_run_id(run_type, logical_date)
+
+    def data_interval_for_events(
+        self,
+        logical_date: DateTime,
+        events: Collection[AssetEvent],
+    ) -> DataInterval:
+        if not events:
+            return DataInterval(logical_date, logical_date)
+
+        start_dates, end_dates = [], []
+        for event in events:
+            if event.source_dag_run is not None:
+                start_dates.append(event.source_dag_run.data_interval_start)
+                end_dates.append(event.source_dag_run.data_interval_end)
+            else:
+                start_dates.append(event.timestamp)
+                end_dates.append(event.timestamp)
+
+        start = min(start_dates)
+        end = max(end_dates)
+        return DataInterval(start, end)
+
+    def next_dagrun_info(
+        self,
+        *,
+        last_automated_data_interval: DataInterval | None,
+        restriction: TimeRestriction,
+    ) -> DagRunInfo | None:
+        return None

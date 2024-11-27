@@ -16,7 +16,7 @@
     under the License.
 
 Recipes
-=======
+========
 
 Users sometimes share interesting ways of using the Docker images. We encourage users to contribute these
 recipes to the documentation in case they prove useful to other members of the community by
@@ -69,4 +69,24 @@ Then build a new image.
   docker build . \
     --pull \
     --build-arg BASE_AIRFLOW_IMAGE="apache/airflow:2.0.2" \
+    --tag my-airflow-image:0.0.1
+
+Apache Beam Go Stack installation
+---------------------------------
+
+To be able to run Beam Go Pipeline with the :class:`~airflow.providers.apache.beam.operators.beam.BeamRunGoPipelineOperator`,
+you will need Go in your container. Install airflow with ``apache-airflow-providers-google>=6.5.0`` and ``apache-airflow-providers-apache-beam>=3.2.0``
+
+Create a new Dockerfile like the one shown below.
+
+.. exampleinclude:: /docker-images-recipes/go-beam.Dockerfile
+    :language: dockerfile
+
+Then build a new image.
+
+.. code-block:: bash
+
+  docker build . \
+    --pull \
+    --build-arg BASE_AIRFLOW_IMAGE="apache/airflow:2.2.5" \
     --tag my-airflow-image:0.0.1

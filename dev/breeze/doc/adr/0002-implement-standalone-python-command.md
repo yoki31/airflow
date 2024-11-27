@@ -35,11 +35,11 @@ Date: 2021-11-28
 
 ## Status
 
-Draft
+Accepted
 
 ## Context
 
-The [Breeze](https://github.com/apache/airflow/blob/main/BREEZE.rst) is
+The [Breeze](https://github.com/apache/airflow/blob/main/dev/breeze/doc/README.rst) is
 a command line development environment for Apache Airflow that makes
 it easy to setup Airflow development and test environment easily
 (< 10 minutes is the goal) and enable contributors to run any subset
@@ -69,7 +69,7 @@ In November 2021, Outreachy sponsored two internship for two interns: @Bowrna an
 the projects:
 
 * Convert Airflow Local Development environment `Breeze` - from Bash-based to Python-based
-* Rewrite Github Action workflows to Python
+* Rewrite GitHub Action workflows to Python
 
 With @potiuk, @eladkal and @xurror as mentors.
 
@@ -127,12 +127,8 @@ The main decision is:
 **Vast majority of both Breeze and our CI scripts should be Python-based**
 
 There are likely a number of scripts that will remain in Bash, but they should contain no sophisticated
-logic, they should not haave common code in form of libraries and only used to execute simple tasks inside
+logic, they should not have common code in form of libraries and only used to execute simple tasks inside
 Docker containers. No Bash should ever be used in the host environment.
-
-The "working" name of the new Breeze is "Breeze2". We might come up with a better name in the future. In
-order to distinguish from the Bash version of Breeze we will always use capitalized form of Breeze as opposed
-to lower-case often used for the Bash version.
 
 There are a few properties of Breeze/CI scripts that should be maintained though
 
@@ -142,9 +138,9 @@ There are a few properties of Breeze/CI scripts that should be maintained though
   run a command and get everything done with the least number of prerequisites
 
 * The prerequisites for Breeze and CI are:
-   * Python 3.7+ (Python 3.6 end of life is December 2021)
-   * Docker (TBD which minimum version supported)
-   * Docker Compose (TBD which minimum version supported)
+   * Python 3.9+ (Python 3.9 end of life is October 2025)
+   * Docker (23.0+)
+   * Docker Compose (2.16.0+)
    * No other tools and CLI commands should be needed
    * The python requirements should be automatically installed when missing in a "Breeze" venv and updated
      automatically when needed. The number of Python dependencies needed to run Breeze and CI scripts
@@ -160,7 +156,7 @@ There are a few properties of Breeze/CI scripts that should be maintained though
    * we use `pytest` to run automated tests for our code
    * until we are ready to share it with developers the new `Breeze` script resides in `dev/Breeze` folder,
      without yet linking it from main directory of Airflow. Later we will link to it from the main directory
-     likely as `Breeze2` script (in some environments where filesystem is case-insensitive (MacOS) you cannot
+     likely as `breeze` script (in some environments where filesystem is case-insensitive (MacOS) you cannot
      really put two files differing only by case in the same folder.
    * There is enough overlap between the CI and Breeze to reuse a lot of commands for building images and
      other CI actions that they should be shared between Breeze and CI. Therefore `dev/Breeze` will

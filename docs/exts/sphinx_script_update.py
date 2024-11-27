@@ -14,14 +14,15 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
+
 import hashlib
 import json
 import os
 import shutil
 import sys
 import tempfile
-from functools import lru_cache
-from typing import Dict
+from functools import cache
 
 import requests
 from sphinx.builders import html as builders
@@ -46,15 +47,15 @@ def _user_cache_dir(appname=None):
         # Windows has a complex procedure to download the App Dir directory because this directory can be
         # changed in window registry, so i use temporary directory for cache
         path = os.path.join(tempfile.gettempdir(), appname)
-    elif sys.platform == 'darwin':
-        path = os.path.expanduser('~/Library/Caches')
+    elif sys.platform == "darwin":
+        path = os.path.expanduser("~/Library/Caches")
     else:
-        path = os.getenv('XDG_CACHE_HOME', os.path.expanduser('~/.cache'))
+        path = os.getenv("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))
     path = os.path.join(path, appname)
     return path
 
 
-@lru_cache(maxsize=None)
+@cache
 def fetch_and_cache(script_url: str, output_filename: str):
     """Fetch URL to local cache and returns path."""
     cache_key = _gethash(script_url)
@@ -64,7 +65,7 @@ def fetch_and_cache(script_url: str, output_filename: str):
     # Create cache directory
     os.makedirs(cache_dir, exist_ok=True)
     # Load cache metadata
-    cache_metadata: Dict[str, str] = {}
+    cache_metadata: dict[str, str] = {}
     if os.path.exists(cache_metadata_filepath):
         try:
             with open(cache_metadata_filepath) as cache_file:
@@ -87,10 +88,10 @@ def fetch_and_cache(script_url: str, output_filename: str):
         output_file.write(res.content)
 
     # Save cache metadata, if needed
-    etag = res.headers.get('etag', None)
+    etag = res.headers.get("etag", None)
     if etag:
         cache_metadata[cache_key] = etag
-        with open(cache_metadata_filepath, 'w') as cache_file:
+        with open(cache_metadata_filepath, "w") as cache_file:
             json.dump(cache_metadata, cache_file)
 
     return cache_filepath
@@ -112,7 +113,7 @@ def build_finished(app, exception):
     output_filename = "script.js"
 
     cache_filepath = fetch_and_cache(script_url, output_filename)
-    _copy_file(cache_filepath, os.path.join(app.builder.outdir, '_static', "redoc.js"))
+    _copy_file(cache_filepath, os.path.join(app.builder.outdir, "_static", "redoc.js"))
 
 
 def setup(app):
@@ -120,3 +121,4 @@ def setup(app):
     app.add_config_value("redoc_script_url", None, "env")
     app.connect("builder-inited", builder_inited)
     app.connect("build-finished", build_finished)
+    return {"parallel_read_safe": True, "parallel_write_safe": True}

@@ -33,7 +33,7 @@ To do so, you need to set the following setting in your ``airflow.cfg``::
 
     base_url = http://my_host/myorg/airflow
 
-Additionally if you use Celery Executor, you can get Flower in ``/myorg/flower`` with::
+Additionally if you use Celery Executor, and you enable flower, you can get Flower in ``/myorg/flower`` with::
 
     flower_url_prefix = /myorg/flower
 
@@ -53,23 +53,15 @@ Your reverse proxy (ex: nginx) should be configured as follow:
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection "upgrade";
         }
-      }
 
-- rewrite the url for the flower endpoint::
-
-      server {
-          listen 80;
-          server_name lab.mycompany.com;
-
-          location /myorg/flower/ {
-              rewrite ^/myorg/flower/(.*)$ /$1 break;  # remove prefix from http header
-              proxy_pass http://localhost:5555;
-              proxy_set_header Host $http_host;
-              proxy_redirect off;
-              proxy_http_version 1.1;
-              proxy_set_header Upgrade $http_upgrade;
-              proxy_set_header Connection "upgrade";
-          }
+        location /myorg/flower/ {
+            proxy_pass http://localhost:5555;
+            proxy_set_header Host $http_host;
+            proxy_redirect off;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+        }
       }
 
 To ensure that Airflow generates URLs with the correct scheme when

@@ -22,12 +22,12 @@
 InfluxDBOperator
 =================
 
-Use the :class:`~airflow.providers.influxdb.operators.InfluxDBOperator` to execute
+Use the :class:`~airflow.providers.influxdb.operators.influxdb.InfluxDBOperator` to execute
 SQL commands in a `InfluxDB <https://www.influxdata.com/>`__ database.
 
 An example of running the query using the operator:
 
-.. exampleinclude:: /../../airflow/providers/influxdb/example_dags/example_influxdb_query.py
+.. exampleinclude:: /../../providers/tests/system/influxdb/example_influxdb_query.py
     :language: python
     :start-after: [START howto_operator_influxdb]
     :end-before: [END howto_operator_influxdb]

@@ -17,11 +17,11 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
+from __future__ import annotations
 
 """Nice formatted include for examples"""
+import os
 import traceback
-from os import path
 
 from docutils import nodes
 
@@ -36,7 +36,7 @@ from sphinx.util.docutils import SphinxDirective
 from sphinx.util.nodes import set_source_info
 
 try:
-    import sphinx_airflow_theme  # noqa: autoflake
+    import sphinx_airflow_theme
 
     airflow_theme_is_available = True
 except ImportError:
@@ -121,7 +121,7 @@ class ExampleInclude(SphinxDirective):
                 extra_args["hl_lines"] = [x + 1 for x in hl_lines if x < lines]
             extra_args["linenostart"] = reader.lineno_start
 
-            container_node = nodes.container("", literal_block=True, classes=["example-block-wrapper"])
+            container_node = nodes.compound(classes=["example-block-wrapper"])
             container_node += ExampleHeader(filename=filename)
             container_node += retnode
             retnode = container_node
@@ -151,7 +151,7 @@ def register_source(app, env, modname):
             analyzer = ModuleAnalyzer.for_module(modname)
         except Exception as ex:
             logger.info(
-                "Module \"%s\" could not be loaded. Full source will not be available. \"%s\"", modname, ex
+                'Module "%s" could not be loaded. Full source will not be available. "%s"', modname, ex
             )
             # We cannot use regular warnings or exception methods because those warnings are interpreted
             # by running python process and converted into "real" warnings, so we need to print the
@@ -188,7 +188,18 @@ def create_node(env, relative_path, show_button):
     :param show_button: whether to show "view code" button
     :return paragraph with the node
     """
-    pagename = "_modules/" + relative_path[:-3]
+
+    # Strip "providers" out of the example title that we include/link to. The full path needs to include
+    # it so we can pull in the code, but we don't want it to show up in the rendered docs
+    if relative_path.startswith("providers/src/"):
+        relative_path = relative_path.replace("providers/src/", "", 1)
+    elif relative_path.startswith("providers/"):
+        relative_path = relative_path.replace("providers/", "", 1)
+
+    if relative_path.endswith(".py"):
+        pagename = "_modules/" + relative_path[:-3]
+    else:
+        pagename = "_modules/" + relative_path
 
     header_classes = ["example-header"]
     if show_button:
@@ -227,8 +238,8 @@ def doctree_read(app, doctree):
 
     for objnode in doctree.traverse(ExampleHeader):
         filepath = objnode.get("filename")
-        relative_path = path.relpath(
-            filepath, path.commonprefix([app.config.exampleinclude_sourceroot, filepath])
+        relative_path = os.path.relpath(
+            filepath, os.path.commonprefix([app.config.exampleinclude_sourceroot, filepath])
         )
         modname = relative_path.replace("/", ".")[:-3]
         show_button = register_source(app, env, modname)
@@ -249,5 +260,5 @@ def setup(app):
     app.add_config_value("exampleinclude_sourceroot", None, "env")
     if not airflow_theme_is_available:
         # Sphinx airflow theme has its own styles.
-        app.add_css_file('exampleinclude.css')
-    return {"version": "builtin", "parallel_read_safe": False, "parallel_write_safe": False}
+        app.add_css_file("exampleinclude.css")
+    return {"version": "builtin", "parallel_read_safe": True, "parallel_write_safe": True}

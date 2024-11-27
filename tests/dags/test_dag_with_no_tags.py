@@ -14,11 +14,12 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
 from datetime import datetime
 
-from airflow.models import DAG
-from airflow.operators.dummy import DummyOperator
+from airflow.models.dag import DAG
+from airflow.operators.empty import EmptyOperator
 
 DEFAULT_DATE = datetime(2016, 1, 1)
 
@@ -27,5 +28,5 @@ default_args = {
     "start_date": DEFAULT_DATE,
 }
 
-with DAG(dag_id="test_dag_with_no_tags", default_args=default_args, schedule_interval='@once') as dag:
-    task_a = DummyOperator(task_id="test_task_a")
+with DAG(dag_id="test_dag_with_no_tags", default_args=default_args, schedule="@once") as dag:
+    task_a = EmptyOperator(task_id="test_task_a")

@@ -16,14 +16,15 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-/* global $, moment, Airflow, window, localStorage, document, hostName, csrfToken */
+/* global $, moment, Airflow, window, localStorage, document, hostName, csrfToken, CustomEvent */
 
 import {
   dateTimeAttrFormat,
   formatTimezone,
   isoDateToTimeEl,
   setDisplayedTimezone,
-} from './datetime_utils';
+  TimezoneEvent,
+} from "./datetime_utils";
 
 window.isoDateToTimeEl = isoDateToTimeEl;
 
@@ -36,22 +37,29 @@ window.moment = Airflow.moment;
 
 function displayTime() {
   const now = moment();
-  $('#clock')
-    .attr('datetime', now.format(dateTimeAttrFormat))
-    .html(`${now.format('HH:mm')} <strong>${formatTimezone(now)}</strong>`);
+  $("#clock")
+    .attr("datetime", now.format(dateTimeAttrFormat))
+    .html(`${now.format("HH:mm")} <strong>${formatTimezone(now)}</strong>`);
 }
 
-function changDisplayedTimezone(tz) {
-  localStorage.setItem('selected-timezone', tz);
+function changeDisplayedTimezone(tz) {
+  localStorage.setItem("selected-timezone", tz);
+
+  // dispatch an event that React can listen for
+  const event = new CustomEvent(TimezoneEvent, {
+    detail: tz,
+  });
+  document.dispatchEvent(event);
+
   setDisplayedTimezone(tz);
   displayTime();
-  $('body').trigger({
-    type: 'airflow.timezone-change',
+  $("body").trigger({
+    type: "airflow.timezone-change",
     timezone: tz,
   });
 }
 
-const el = document.createElement('span');
+const el = document.createElement("span");
 
 export function escapeHtml(text) {
   el.textContent = text;
@@ -61,33 +69,34 @@ export function escapeHtml(text) {
 window.escapeHtml = escapeHtml;
 
 export function convertSecsToHumanReadable(seconds) {
+  let processedSeconds = seconds;
   const oriSeconds = seconds;
   const floatingPart = oriSeconds - Math.floor(oriSeconds);
 
-  seconds = Math.floor(seconds);
+  processedSeconds = Math.floor(processedSeconds);
 
   const secondsPerHour = 60 * 60;
   const secondsPerMinute = 60;
 
-  const hours = Math.floor(seconds / secondsPerHour);
-  seconds -= hours * secondsPerHour;
+  const hours = Math.floor(processedSeconds / secondsPerHour);
+  processedSeconds -= hours * secondsPerHour;
 
-  const minutes = Math.floor(seconds / secondsPerMinute);
-  seconds -= minutes * secondsPerMinute;
+  const minutes = Math.floor(processedSeconds / secondsPerMinute);
+  processedSeconds -= minutes * secondsPerMinute;
 
-  let readableFormat = '';
+  let readableFormat = "";
   if (hours > 0) {
     readableFormat += `${hours}Hours `;
   }
   if (minutes > 0) {
     readableFormat += `${minutes}Min `;
   }
-  if (seconds + floatingPart > 0) {
+  if (processedSeconds + floatingPart > 0) {
     if (Math.floor(oriSeconds) === oriSeconds) {
-      readableFormat += `${seconds}Sec`;
+      readableFormat += `${processedSeconds}Sec`;
     } else {
-      seconds += floatingPart;
-      readableFormat += `${seconds.toFixed(3)}Sec`;
+      processedSeconds += floatingPart;
+      readableFormat += `${processedSeconds.toFixed(3)}Sec`;
     }
   }
   return readableFormat;
@@ -95,26 +104,26 @@ export function convertSecsToHumanReadable(seconds) {
 window.convertSecsToHumanReadable = convertSecsToHumanReadable;
 
 function postAsForm(url, parameters) {
-  const form = $('<form></form>');
+  const form = $("<form></form>");
 
-  form.attr('method', 'POST');
-  form.attr('action', url);
+  form.attr("method", "POST");
+  form.attr("action", url);
 
   $.each(parameters || {}, (key, value) => {
-    const field = $('<input></input>');
+    const field = $("<input></input>");
 
-    field.attr('type', 'hidden');
-    field.attr('name', key);
-    field.attr('value', value);
+    field.attr("type", "hidden");
+    field.attr("name", key);
+    field.attr("value", value);
 
     form.append(field);
   });
 
-  const field = $('<input></input>');
+  const field = $("<input></input>");
 
-  field.attr('type', 'hidden');
-  field.attr('name', 'csrf_token');
-  field.attr('value', csrfToken);
+  field.attr("type", "hidden");
+  field.attr("name", "csrf_token");
+  field.attr("value", csrfToken);
 
   form.append(field);
 
@@ -129,77 +138,149 @@ window.postAsForm = postAsForm;
 function initializeUITimezone() {
   const local = moment.tz.guess();
 
-  const selectedTz = localStorage.getItem('selected-timezone');
-  const manualTz = localStorage.getItem('chosen-timezone');
+  const selectedTz = localStorage.getItem("selected-timezone");
+  const manualTz = localStorage.getItem("chosen-timezone");
 
   function setManualTimezone(tz) {
-    localStorage.setItem('chosen-timezone', tz);
+    localStorage.setItem("chosen-timezone", tz);
     if (tz === local && tz === Airflow.serverTimezone) {
-      $('#timezone-manual').hide();
+      $("#timezone-manual").hide();
       return;
     }
 
-    $('#timezone-manual a').data('timezone', tz).text(formatTimezone(tz));
-    $('#timezone-manual').show();
+    $("#timezone-manual a").data("timezone", tz).text(formatTimezone(tz));
+    $("#timezone-manual").show();
   }
 
   if (manualTz) {
     setManualTimezone(manualTz);
   }
 
-  changDisplayedTimezone(selectedTz || Airflow.defaultUITimezone);
+  changeDisplayedTimezone(selectedTz || Airflow.defaultUITimezone);
 
-  if (Airflow.serverTimezone !== 'UTC') {
-    $('#timezone-server a').html(`${formatTimezone(Airflow.serverTimezone)} <span class="label label-primary">Server</span>`);
-    $('#timezone-server').show();
+  if (Airflow.serverTimezone !== "UTC") {
+    $("#timezone-server a").html(
+      `${formatTimezone(
+        Airflow.serverTimezone
+      )} <span class="label label-primary">Server</span>`
+    );
+    $("#timezone-server").show();
   }
 
   if (Airflow.serverTimezone !== local) {
-    $('#timezone-local a')
-      .attr('data-timezone', local)
-      .html(`${formatTimezone(local)} <span class="label label-info">Local</span>`);
+    $("#timezone-local a")
+      .attr("data-timezone", local)
+      .html(
+        `${formatTimezone(local)} <span class="label label-info">Local</span>`
+      );
   } else {
-    $('#timezone-local').hide();
+    $("#timezone-local").hide();
   }
 
-  $('a[data-timezone]').click((evt) => {
-    changDisplayedTimezone($(evt.target).data('timezone'));
+  $("a[data-timezone]").click((evt) => {
+    changeDisplayedTimezone($(evt.currentTarget).data("timezone"));
+  });
+  // Prepare the data source
+  const timezoneData = moment.tz.names().map((tzName) => {
+    const category = tzName.split("/", 1)[0];
+    return { category, label: tzName.replace("_", " "), value: tzName };
   });
 
-  $('#timezone-other').typeahead({
-    source: $(moment.tz.names().map((tzName) => {
-      const category = tzName.split('/', 1)[0];
-      return { category, name: tzName.replace('_', ' '), tzName };
-    })),
-    showHintOnFocus: 'all',
-    showCategoryHeader: true,
-    items: 'all',
-    afterSelect(data) {
-      // Clear it for next time we open the pop-up
-      this.$element.val('');
+  // Create a custom filter function to include categories
+  function filterByCategory(array, term) {
+    const matcher = new RegExp($.ui.autocomplete.escapeRegex(term), "i");
+    return $.grep(
+      array,
+      (item) => matcher.test(item.label) || matcher.test(item.category)
+    );
+  }
 
-      setManualTimezone(data.tzName);
-      changDisplayedTimezone(data.tzName);
+  // Initialize jQuery UI Autocomplete
+  // eslint-disable-next-line no-underscore-dangle
+  $("#timezone-other")
+    .autocomplete({
+      source: (request, response) => {
+        const results = filterByCategory(timezoneData, request.term);
+        response(results);
+      },
+      appendTo: "#timezone-menu > li:nth-child(6) > form",
+      focus: (event, ui) => {
+        // Prevent the value from being inserted on focus
+        event.preventDefault();
+        $(this).val(ui.item.label);
+      },
+      select: (event, ui) => {
+        // Clear it for next time we open the pop-up
+        $(this).val("");
 
-      // We need to delay the close event to not be in the form handler,
-      // otherwise bootstrap ignores it, thinking it's caused by interaction on
-      // the <form>
-      setTimeout(() => {
-        document.activeElement.blur();
-        // Bug in typeahed, it thinks it's still shown!
-        this.shown = false;
-        this.focused = false;
-      }, 1);
-    },
-  });
+        setManualTimezone(ui.item.value);
+        changeDisplayedTimezone(ui.item.value);
+
+        return false;
+      },
+    })
+    .data("ui-autocomplete")._renderItem = function (ul, item) {
+    const $li = $("<li>");
+    $li.append(
+      `<a class='dropdown-item' href='#' role='option'>${item.label}</a>`
+    );
+    return $li.appendTo(ul);
+  };
+
+  // Custom rendering function to include category headers
+  // eslint-disable-next-line no-underscore-dangle
+  $.ui.autocomplete.prototype._renderMenu = function (ul, items) {
+    let currentCategory = "";
+    ul.addClass("typeahead dropdown-menu");
+    ul.attr("role", "listbox");
+    $.each(items, (index, item) => {
+      if (item.category !== currentCategory) {
+        ul.append(
+          `<li class='ui-autocomplete-category dropdown-header'>${item.category}</li>`
+        );
+        currentCategory = item.category;
+      }
+      // eslint-disable-next-line no-underscore-dangle
+      this._renderItemData(ul, item);
+    });
+  };
+}
+
+function filterOpSelected(ele) {
+  const op = $(ele);
+  const filterVal = $(".filter_val.form-control", op.parents("tr"));
+
+  if (op.text() === "Is Null" || op.text() === "Is not Null") {
+    if (filterVal.attr("required") !== undefined) {
+      filterVal.removeAttr("required");
+      filterVal.attr("airflow-required", true);
+    }
+
+    if (filterVal.parent(".datetime").length === 1) {
+      filterVal.parent(".datetime").hide();
+    } else {
+      filterVal.hide();
+    }
+  } else {
+    if (filterVal.attr("airflow-required") === "true") {
+      filterVal.attr("required", true);
+      filterVal.removeAttr("airflow-required");
+    }
+
+    if (filterVal.parent(".datetime").length === 1) {
+      filterVal.parent(".datetime").show();
+    } else {
+      filterVal.show();
+    }
+  }
 }
 
 $(document).ready(() => {
   initializeUITimezone();
 
-  $('#clock')
-    .attr('data-original-title', hostName)
-    .attr('data-placement', 'bottom')
+  $("#clock")
+    .attr("data-original-title", hostName)
+    .attr("data-placement", "bottom")
     .parent()
     .show();
 
@@ -208,22 +289,36 @@ $(document).ready(() => {
 
   $.ajaxSetup({
     beforeSend(xhr, settings) {
-      if (!/^(GET|HEAD|OPTIONS|TRACE)$/i.test(settings.type) && !this.crossDomain) {
-        xhr.setRequestHeader('X-CSRFToken', csrfToken);
+      if (
+        !/^(GET|HEAD|OPTIONS|TRACE)$/i.test(settings.type) &&
+        !this.crossDomain
+      ) {
+        xhr.setRequestHeader("X-CSRFToken", csrfToken);
       }
     },
   });
 
-  $.fn.datetimepicker.defaults.format = 'YYYY-MM-DD HH:mm:ssZ';
   $.fn.datetimepicker.defaults.sideBySide = true;
-  $('.datetimepicker').datetimepicker();
+  $(".datetimepicker").datetimepicker({ format: "YYYY-MM-DDTHH:mm:ssZ" });
+  $(".datepicker").datetimepicker({ format: "YYYY-MM-DD" });
+  $(".timepicker").datetimepicker({ format: "HH:mm:ss" });
+
+  $(".filters .select2-chosen").each((idx, elem) => {
+    filterOpSelected(elem);
+  });
+  $(".filters .select2-chosen").on("DOMNodeInserted", (e) => {
+    filterOpSelected(e.target);
+  });
 
   // Fix up filter fields from FAB adds to the page. This event is fired after
   // the FAB registered one which adds the new control
-  $('#filter_form a.filter').click(() => {
-    $('.datetimepicker').datetimepicker();
+  $("#filter_form a.filter").click(() => {
+    $(".datetimepicker").datetimepicker();
+    $(".filters .select2-chosen").on("DOMNodeInserted", (e) => {
+      filterOpSelected(e.target);
+    });
   });
 
   // Global Tooltip selector
-  $('.js-tooltip').tooltip();
+  $(".js-tooltip").tooltip();
 });

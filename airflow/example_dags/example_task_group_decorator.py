@@ -15,8 +15,9 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
 """Example DAG demonstrating the usage of the @taskgroup decorator."""
+
+from __future__ import annotations
 
 import pendulum
 
@@ -28,32 +29,32 @@ from airflow.models.dag import DAG
 # Creating Tasks
 @task
 def task_start():
-    """Dummy Task which is First Task of Dag"""
-    return '[Task_start]'
+    """Empty Task which is First Task of Dag"""
+    return "[Task_start]"
 
 
 @task
 def task_1(value: int) -> str:
-    """Dummy Task1"""
-    return f'[ Task1 {value} ]'
+    """Empty Task1"""
+    return f"[ Task1 {value} ]"
 
 
 @task
 def task_2(value: str) -> str:
-    """Dummy Task2"""
-    return f'[ Task2 {value} ]'
+    """Empty Task2"""
+    return f"[ Task2 {value} ]"
 
 
 @task
 def task_3(value: str) -> None:
-    """Dummy Task3"""
-    print(f'[ Task3 {value} ]')
+    """Empty Task3"""
+    print(f"[ Task3 {value} ]")
 
 
 @task
 def task_end() -> None:
-    """Dummy Task which is Last Task of Dag"""
-    print('[ Task_End  ]')
+    """Empty Task which is Last Task of Dag"""
+    print("[ Task_End  ]")
 
 
 # Creating TaskGroups
@@ -66,6 +67,7 @@ def task_group_function(value: int) -> None:
 # Executing Tasks and TaskGroups
 with DAG(
     dag_id="example_task_group_decorator",
+    schedule=None,
     start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
     catchup=False,
     tags=["example"],

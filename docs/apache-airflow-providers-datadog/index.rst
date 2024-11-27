@@ -19,16 +19,32 @@
 ``apache-airflow-providers-datadog``
 ====================================
 
-Content
--------
 
 .. toctree::
+    :hidden:
+    :maxdepth: 1
+    :caption: Basics
+
+    Home <self>
+    Changelog <changelog>
+    Security <security>
+
+.. toctree::
+    :hidden:
+    :maxdepth: 1
+    :caption: Guides
+
+    Connection types <connections/datadog>
+
+.. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: References
 
     Python API <_api/airflow/providers/datadog/index>
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Resources
 
@@ -39,40 +55,42 @@ Content
 
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Commits
 
     Detailed list of commits <commits>
 
 
-Package apache-airflow-providers-datadog
+apache-airflow-providers-datadog package
 ------------------------------------------------------
 
 `Datadog <https://www.datadoghq.com/>`__
 
 
-Release: 2.0.3
+Release: 3.7.1
 
 Provider package
 ----------------
 
-This is a provider package for ``datadog`` provider. All classes for this provider package
-are in ``airflow.providers.datadog`` python package.
+This package is for the ``datadog`` provider.
+All classes for this package are included in the ``airflow.providers.datadog`` python package.
 
 Installation
 ------------
 
-You can install this package on top of an existing Airflow 2.1+ installation via
-``pip install apache-airflow-providers-datadog``
+You can install this package on top of an existing Airflow 2 installation via
+``pip install apache-airflow-providers-datadog``.
+For the minimum Airflow version supported, see ``Requirements`` below.
 
-PIP requirements
-----------------
+Requirements
+------------
+
+The minimum Apache Airflow version supported by this provider package is ``2.8.0``.
 
 ==================  ==================
 PIP package         Version required
 ==================  ==================
-``apache-airflow``  ``>=2.1.0``
+``apache-airflow``  ``>=2.8.0``
 ``datadog``         ``>=0.14.0``
 ==================  ==================
-
-.. include:: ../../airflow/providers/datadog/CHANGELOG.rst

@@ -15,13 +15,13 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
+from __future__ import annotations
 
 from datetime import datetime
 
-from airflow.models import DAG
-from airflow.operators.dummy import DummyOperator
+from airflow.models.dag import DAG
+from airflow.operators.empty import EmptyOperator
 
 for i in range(1, 2):
-    dag = DAG(dag_id=f'test_latest_runs_{i}')
-    task = DummyOperator(task_id='dummy_task', dag=dag, owner='airflow', start_date=datetime(2016, 2, 1))
+    dag = DAG(dag_id=f"test_latest_runs_{i}", schedule=None)
+    task = EmptyOperator(task_id="dummy_task", dag=dag, owner="airflow", start_date=datetime(2016, 2, 1))

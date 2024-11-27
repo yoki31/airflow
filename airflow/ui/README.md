@@ -17,55 +17,53 @@
  under the License.
  -->
 
-# Airflow UI
+# React + TypeScript + Vite
 
-## Built with:
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-- [React](https://reactjs.org/) - a JavaScript library for building user interfaces
-- [TypeScript](https://www.typescriptlang.org/) - extends JavaScript by adding types.
-- [Neutrino](https://neutrinojs.org/) - lets you build web and Node.js applications with shared presets or configurations.
-- [Chakra UI](https://chakra-ui.com/) - a simple, modular and accessible component library that gives you all the building blocks you need to build your React applications.
-- [React Testing Library](https://testing-library.com/docs/react-testing-library/intro/) - write tests that focus on functionality instead of implementation
-- [React Query](https://react-query.tanstack.com/) - powerful async data handler. all API calls go through this
+Currently, two official plugins are available:
 
-## Environment variables
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
 
-To communicate with the API you need to adjust some environment variables for the webserver and this UI.
+## Expanding the ESLint configuration
 
-Be sure to allow CORS headers and set up an auth backend on your Airflow instance.
+If you are developing a production application, we recommend updating the configuration to enable type aware lint rules:
 
-```
-export AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth
-export AIRFLOW__API__ACCESS_CONTROL_ALLOW_HEADERS=*
-export AIRFLOW__API__ACCESS_CONTROL_ALLOW_METHODS=*
-export AIRFLOW__API__ACCESS_CONTROL_ALLOW_ORIGIN=http://127.0.0.1:28080
-```
+- Configure the top-level `parserOptions` property like this:
 
-Create your local environment and adjust the `WEBSERVER_URL` if needed.
-
-```bash
-cp .env.example .env
+```js
+export default tseslint.config({
+  languageOptions: {
+    // other options...
+    parserOptions: {
+      project: ['./tsconfig.node.json', './tsconfig.app.json'],
+      tsconfigRootDir: import.meta.dirname,
+    },
+  },
+})
 ```
 
-## Installation
+- Replace `tseslint.configs.recommended` to `tseslint.configs.recommendedTypeChecked` or `tseslint.configs.strictTypeChecked`
+- Optionally add `...tseslint.configs.stylisticTypeChecked`
+- Install [eslint-plugin-react](https://github.com/jsx-eslint/eslint-plugin-react) and update the config:
 
-Clone the repository and use the package manager [yarn](https://yarnpkg.com) to install dependencies and get the project running.
+```js
+// eslint.config.js
+import react from 'eslint-plugin-react'
 
-```bash
-yarn install
-yarn start
+export default tseslint.config({
+  // Set the react version
+  settings: { react: { version: '18.3' } },
+  plugins: {
+    // Add the react plugin
+    react,
+  },
+  rules: {
+    // other rules...
+    // Enable its recommended rules
+    ...react.configs.recommended.rules,
+    ...react.configs['jsx-runtime'].rules,
+  },
+})
 ```
-
-Other useful commands include:
-
-```bash
-yarn lint
-```
-
-```bash
-yarn test
-```
-
-## Contributing
-
-Be sure to check out our [contribution guide](docs/CONTRIBUTING.md)

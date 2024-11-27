@@ -16,7 +16,7 @@
     under the License.
 
 
-
+.. _export_dynamic_environment_variables:
 
 Export dynamic environment variables available for operators to use
 ===================================================================
@@ -30,23 +30,17 @@ value are must be string.
 ``dag_id``, ``task_id``, ``execution_date``, ``dag_run_id``,
 ``dag_owner``, ``dag_email`` are reserved keys.
 
-
-1.  Create ``airflow_local_settings.py`` file and put in on ``$PYTHONPATH`` or
-    to ``$AIRFLOW_HOME/config`` folder. (Airflow adds ``$AIRFLOW_HOME/config`` on ``PYTHONPATH`` when
-    Airflow is initialized)
-
-2.  Define ``get_airflow_context_vars`` in ``airflow_local_settings.py`` file.
-
-
-For example:
-
-In your ``airflow_local_settings.py`` file.
+For example, in your ``airflow_local_settings.py`` file:
 
 .. code-block:: python
 
-  def get_airflow_context_vars(context) -> Dict[str, str]:
+  def get_airflow_context_vars(context) -> dict[str, str]:
       """
       :param context: The context for the task_instance of interest.
       """
       # more env vars
       return {"airflow_cluster": "main"}
+
+
+See :ref:`Configuring local settings <set-config:configuring-local-settings>` for details on how to
+configure local settings.

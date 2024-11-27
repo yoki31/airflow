@@ -15,20 +15,23 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
 import logging
 import os
 import re
 import textwrap
 from pathlib import Path
-from typing import List, Set, Tuple
+from typing import TYPE_CHECKING
 
 import rich_click as click
 from attr import dataclass
 from github import Github
-from github.Issue import Issue
 from rich.console import Console
 from tabulate import tabulate
+
+if TYPE_CHECKING:
+    from github.Issue import Issue
 
 PROVIDER_TESTING_LABEL = "testing status"
 
@@ -40,9 +43,8 @@ MY_DIR_PATH = Path(os.path.dirname(__file__))
 SOURCE_DIR_PATH = MY_DIR_PATH / os.pardir / os.pardir
 
 
-@click.group(context_settings={'help_option_names': ['-h', '--help'], 'max_content_width': 500})
-def cli():
-    ...
+@click.group(context_settings={"help_option_names": ["-h", "--help"], "max_content_width": 500})
+def cli(): ...
 
 
 option_table = click.option(
@@ -57,12 +59,12 @@ option_github_token = click.option(
     required=True,
     help=textwrap.dedent(
         """
-        Github token used to authenticate.
+        GitHub token used to authenticate.
         You can set omit it if you have GITHUB_TOKEN env variable set
         Can be generated with:
         https://github.com/settings/tokens/new?description=Read%20Write%20isssues&scopes=repo"""
     ),
-    envvar='GITHUB_TOKEN',
+    envvar="GITHUB_TOKEN",
 )
 
 
@@ -74,11 +76,11 @@ class Stats:
     num_issues: int
     tested_issues: int
     url: str
-    users_involved: Set[str]
-    users_commented: Set[str]
+    users_involved: set[str]
+    users_commented: set[str]
 
     def percent_tested(self) -> int:
-        return int(100.0 * self.tested_issues / self.num_issues)
+        return 100 * self.tested_issues // self.num_issues
 
     def num_involved_users_who_commented(self) -> int:
         return len(self.users_involved.intersection(self.users_commented))
@@ -87,7 +89,7 @@ class Stats:
         return len(self.users_commented - self.users_involved)
 
     def percent_commented_among_involved(self) -> int:
-        return int(100.0 * self.num_involved_users_who_commented() / len(self.users_involved))
+        return 100 * self.num_involved_users_who_commented() // len(self.users_involved)
 
     def __str__(self):
         return (
@@ -102,16 +104,16 @@ class Stats:
         )
 
 
-def get_users_from_content(content: str) -> Set[str]:
+def get_users_from_content(content: str) -> set[str]:
     users_match = re.findall(r"@\S*", content, re.MULTILINE)
-    users: Set[str] = set()
+    users: set[str] = set()
     for user_match in users_match:
         users.add(user_match)
     return users
 
 
-def get_users_who_commented(issue: Issue) -> Set[str]:
-    users: Set[str] = set()
+def get_users_who_commented(issue: Issue) -> set[str]:
+    users: set[str] = set()
     for comment in issue.get_comments():
         users.add("@" + comment.user.login)
     return users
@@ -131,7 +133,7 @@ def get_stats(issue: Issue) -> Stats:
     )
 
 
-def stats_to_rows(stats_list: List[Stats]) -> List[Tuple]:
+def stats_to_rows(stats_list: list[Stats]) -> list[tuple]:
     total = Stats(
         issue_number=0,
         title="",
@@ -142,7 +144,7 @@ def stats_to_rows(stats_list: List[Stats]) -> List[Tuple]:
         users_commented=set(),
         users_involved=set(),
     )
-    rows: List[Tuple] = []
+    rows: list[tuple] = []
     for stat in stats_list:
         total.num_providers += stat.num_providers
         total.num_issues += stat.num_issues
@@ -187,7 +189,7 @@ def provide_stats(github_token: str, table: bool):
     g = Github(github_token)
     repo = g.get_repo("apache/airflow")
     issues = repo.get_issues(labels=[PROVIDER_TESTING_LABEL], state="closed", sort="created", direction="asc")
-    stats_list: List[Stats] = []
+    stats_list: list[Stats] = []
     for issue in issues:
         stat = get_stats(issue)
         if not table:

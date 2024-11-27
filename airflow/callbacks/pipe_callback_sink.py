@@ -15,12 +15,16 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-#
-from multiprocessing.connection import Connection as MultiprocessingConnection
-from typing import Callable
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Callable
 
 from airflow.callbacks.base_callback_sink import BaseCallbackSink
-from airflow.callbacks.callback_requests import CallbackRequest
+
+if TYPE_CHECKING:
+    from multiprocessing.connection import Connection as MultiprocessingConnection
+
+    from airflow.callbacks.callback_requests import CallbackRequest
 
 
 class PipeCallbackSink(BaseCallbackSink):
@@ -35,7 +39,7 @@ class PipeCallbackSink(BaseCallbackSink):
 
     def send(self, callback: CallbackRequest):
         """
-        Sends information about the callback to be executed by Pipe.
+        Send information about the callback to be executed by Pipe.
 
         :param callback: Callback request to be executed.
         """

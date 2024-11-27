@@ -19,10 +19,18 @@
 ``apache-airflow-providers-influxdb``
 =======================================
 
-Content
--------
 
 .. toctree::
+    :hidden:
+    :maxdepth: 1
+    :caption: Basics
+
+    Home <self>
+    Changelog <changelog>
+    Security <security>
+
+.. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Guides
 
@@ -30,74 +38,69 @@ Content
     Operators <operators/index>
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: References
 
     Python API <_api/airflow/providers/influxdb/index>
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
-    :caption: Resources
+    :caption: System tests
 
-    Example DAGs <https://github.com/apache/airflow/tree/main/airflow/providers/influxdb/example_dags>
+    System Tests <_api/tests/system/influxdb/index>
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Resources
 
-    PyPI Repository <https://pypi.org/project/apache-airflow-providers-influxdb/>
-
-.. toctree::
-    :maxdepth: 1
-    :caption: Resources
-
+    Example DAGs <https://github.com/apache/airflow/tree/providers-influxdb/|version|/tests/system/providers/influxdb>
     PyPI Repository <https://pypi.org/project/apache-airflow-providers-influxdb/>
     Installing from sources <installing-providers-from-sources>
-
-.. toctree::
-    :maxdepth: 1
-    :caption: Commits
-
-    Detailed list of commits <commits>
 
 .. THE REMAINDER OF THE FILE IS AUTOMATICALLY GENERATED. IT WILL BE OVERWRITTEN AT RELEASE TIME!
 
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Commits
 
     Detailed list of commits <commits>
 
 
-Package apache-airflow-providers-influxdb
+apache-airflow-providers-influxdb package
 ------------------------------------------------------
 
 `InfluxDB <https://www.influxdata.com/>`__
 
 
-Release: 1.1.2
+Release: 2.7.1
 
 Provider package
 ----------------
 
-This is a provider package for ``influxdb`` provider. All classes for this provider package
-are in ``airflow.providers.influxdb`` python package.
+This package is for the ``influxdb`` provider.
+All classes for this package are included in the ``airflow.providers.influxdb`` python package.
 
 Installation
 ------------
 
-You can install this package on top of an existing Airflow 2.1+ installation via
-``pip install apache-airflow-providers-influxdb``
+You can install this package on top of an existing Airflow 2 installation via
+``pip install apache-airflow-providers-influxdb``.
+For the minimum Airflow version supported, see ``Requirements`` below.
 
-PIP requirements
-----------------
+Requirements
+------------
+
+The minimum Apache Airflow version supported by this provider package is ``2.8.0``.
 
 ===================  ==================
 PIP package          Version required
 ===================  ==================
+``apache-airflow``   ``>=2.8.0``
 ``influxdb-client``  ``>=1.19.0``
-``pandas``           ``>=0.17.1, <1.4``
+``requests``         ``>=2.27.0,<3``
 ===================  ==================
-
-.. include:: ../../airflow/providers/influxdb/CHANGELOG.rst

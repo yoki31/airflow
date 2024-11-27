@@ -35,7 +35,7 @@ Date: 2021-12-19
 
 ## Status
 
-Draft
+Accepted
 
 Builds on [4. Using Docker images as test environment](0004-using-docker-images-as-test-environment.md)
 
@@ -61,7 +61,7 @@ or another developer's PR.
 This requires those prerequisites:
 
   * the images need to be built in a workflow that has "write" access to store the images after they are
-    built, so that the images can then be "pulled" by the test jobs rather than rebuilt
+    built, so that the images can then be pulled by the test jobs rather than rebuilt
 
   * the process to build the images need to be secured from malicious users that would like to inject a
     code in the build process to make bad use of the "write" access - for example to push the code
@@ -108,7 +108,7 @@ but to make sure that the following rules are in-place:
    to our repository
 
 ```yaml
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           ref: ${{ env.TARGET_COMMIT_SHA }}
           persist-credentials: false
@@ -119,6 +119,9 @@ but to make sure that the following rules are in-place:
    GitHub managed actions). Submodules provide few features such as - automated linking to specific commit
    SHA (not tag) and integration with Pull Request Review process when someone creates a PR to upgrade the
    action, which makes it ideal to securely and seamlessly keep the action updated if needed.
+
+   UPDATE: The decision for using submodules have been changed in subsequent ADR
+   [0013-get-rid-of-submodules.md](0013-get-rid-of-submodules.md) to use full-length SHA references.
 
 3) No user code coming from the PR can be executed directly in the "Build image" workflow. For example, the
    build scripts should not import `setup.py` or execute bash scripts coming from other places than:
@@ -156,5 +159,5 @@ Thanks to combination of features available in GitHub, the builds are secured ag
 code by users contributing PRs, that could get uncontrolled write access to Airflow repository.
 
 The negative consequence of this is that the build process becomes much more complex
-(see [CI](../../../../CI.rst) for complete description) and that some cases (like modifying build behaviour
+(see [CI](../ci/README.md) for complete description) and that some cases (like modifying build behaviour
 require additional process of testing by pushing the changes as `main` branch to a fork of Apache Airflow)

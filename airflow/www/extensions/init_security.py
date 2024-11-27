@@ -14,48 +14,55 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
+
 import logging
 from importlib import import_module
 
 from airflow.configuration import conf
-from airflow.exceptions import AirflowConfigException, AirflowException
+from airflow.exceptions import AirflowException
 
 log = logging.getLogger(__name__)
 
 
 def init_xframe_protection(app):
     """
-    Add X-Frame-Options header. Use it to avoid click-jacking attacks, by ensuring that their content is not
-    embedded into other sites.
+    Add X-Frame-Options header.
+
+    Use it to avoid click-jacking attacks, by ensuring that their content is not embedded into other sites.
 
     See also: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options
     """
-    x_frame_enabled = conf.getboolean('webserver', 'X_FRAME_ENABLED', fallback=True)
-    if not x_frame_enabled:
+    x_frame_enabled = conf.getboolean("webserver", "X_FRAME_ENABLED", fallback=True)
+    if x_frame_enabled:
         return
 
     def apply_caching(response):
-        if not x_frame_enabled:
-            response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Frame-Options"] = "DENY"
         return response
 
     app.after_request(apply_caching)
 
 
-def init_api_experimental_auth(app):
-    """Loads authentication backends"""
-    auth_backends = 'airflow.api.auth.backend.default'
-    try:
-        auth_backends = conf.get("api", "auth_backends")
-    except AirflowConfigException:
-        pass
+def init_api_auth(app):
+    """Load authentication backends."""
+    auth_backends = conf.get("api", "auth_backends")
 
     app.api_auth = []
-    for backend in auth_backends.split():
-        try:
+    try:
+        for backend in auth_backends.split(","):
             auth = import_module(backend.strip())
             auth.init_app(app)
             app.api_auth.append(auth)
-        except ImportError as err:
-            log.critical("Cannot import %s for API authentication due to: %s", backend, err)
-            raise AirflowException(err)
+    except ImportError as err:
+        log.critical("Cannot import %s for API authentication due to: %s", backend, err)
+        raise AirflowException(err)
+
+
+def init_cache_control(app):
+    def apply_cache_control(response):
+        if "Cache-Control" not in response.headers:
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
+    app.after_request(apply_cache_control)

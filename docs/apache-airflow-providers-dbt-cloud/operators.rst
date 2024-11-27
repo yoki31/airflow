@@ -40,6 +40,22 @@ execution time. This functionality is controlled by the ``wait_for_termination``
 :class:`~airflow.providers.dbt.cloud.sensors.dbt.DbtCloudJobRunSensor`). Setting ``wait_for_termination`` to
 False is a good approach for long-running dbt Cloud jobs.
 
+The ``deferrable`` parameter along with ``wait_for_termination`` will control the functionality
+whether to poll the job status on the worker or defer using the Triggerer.
+When ``wait_for_termination`` is True and ``deferrable`` is False,we submit the job and ``poll``
+for its status on the worker. This will keep the worker slot occupied till the job execution is done.
+When ``wait_for_termination`` is True and ``deferrable`` is True,
+we submit the job and ``defer`` using Triggerer. This will release the worker slot leading to savings in
+resource utilization while the job is running.
+
+When ``wait_for_termination`` is False and ``deferrable`` is False, we just submit the job and can only
+track the job status with the :class:`~airflow.providers.dbt.cloud.sensors.dbt.DbtCloudJobRunSensor`.
+
+When ``retry_from_failure`` is True, we retry the run for a job from the point of failure,
+if the run failed. Otherwise we trigger a new run.
+For more information on the retry logic, reference the
+`API documentation <https://docs.getdbt.com/dbt-cloud/api-v2#/operations/Retry%20Failed%20Job>`__.
+
 While ``schema_override`` and ``steps_override`` are explicit, optional parameters for the
 ``DbtCloudRunJobOperator``, custom run configurations can also be passed to the operator using the
 ``additional_run_config`` dictionary. This parameter can be used to initialize additional runtime
@@ -51,7 +67,7 @@ The below examples demonstrate how to instantiate DbtCloudRunJobOperator tasks w
 asynchronous waiting for run termination, respectively. To note, the ``account_id`` for the operators is
 referenced within the ``default_args`` of the example DAG.
 
-.. exampleinclude:: /../../airflow/providers/dbt/cloud/example_dags/example_dbt_cloud.py
+.. exampleinclude:: /../../providers/tests/system/dbt/cloud/example_dbt_cloud.py
     :language: python
     :dedent: 4
     :start-after: [START howto_operator_dbt_cloud_run_job]
@@ -60,12 +76,11 @@ referenced within the ``default_args`` of the example DAG.
 This next example also shows how to pass in custom runtime configuration (in this case for ``threads_override``)
 via the ``additional_run_config`` dictionary.
 
-.. exampleinclude:: /../../airflow/providers/dbt/cloud/example_dags/example_dbt_cloud.py
+.. exampleinclude:: /../../providers/tests/system/dbt/cloud/example_dbt_cloud.py
     :language: python
     :dedent: 4
     :start-after: [START howto_operator_dbt_cloud_run_job_async]
     :end-before: [END howto_operator_dbt_cloud_run_job_async]
-
 
 .. _howto/operator:DbtCloudJobRunSensor:
 
@@ -80,11 +95,20 @@ In the example below, the ``run_id`` value in the example below comes from the o
 DbtCloudRunJobOperator task by utilizing the ``.output`` property exposed for all operators. Also, to note,
 the ``account_id`` for the task is referenced within the ``default_args`` of the example DAG.
 
-.. exampleinclude:: /../../airflow/providers/dbt/cloud/example_dags/example_dbt_cloud.py
+.. exampleinclude:: /../../providers/tests/system/dbt/cloud/example_dbt_cloud.py
     :language: python
     :dedent: 4
     :start-after: [START howto_operator_dbt_cloud_run_job_sensor]
     :end-before: [END howto_operator_dbt_cloud_run_job_sensor]
+
+Also, you can poll for status of the job run asynchronously using ``deferrable`` mode. In this mode, worker
+slots are freed up while the sensor is running.
+
+.. exampleinclude:: /../../providers/tests/system/dbt/cloud/example_dbt_cloud.py
+    :language: python
+    :dedent: 4
+    :start-after: [START howto_operator_dbt_cloud_run_job_sensor_deferred]
+    :end-before: [END howto_operator_dbt_cloud_run_job_sensor_deferred]
 
 
 .. _howto/operator:DbtCloudGetJobRunArtifactOperator:
@@ -101,8 +125,29 @@ downloaded.
 For more information on dbt Cloud artifacts, reference
 `this documentation <https://docs.getdbt.com/docs/dbt-cloud/using-dbt-cloud/artifacts>`__.
 
-.. exampleinclude:: /../../airflow/providers/dbt/cloud/example_dags/example_dbt_cloud.py
+.. exampleinclude:: /../../providers/tests/system/dbt/cloud/example_dbt_cloud.py
     :language: python
     :dedent: 4
     :start-after: [START howto_operator_dbt_cloud_get_artifact]
     :end-before: [END howto_operator_dbt_cloud_get_artifact]
+
+
+.. _howto/operator:DbtCloudListJobsOperator:
+
+List jobs
+~~~~~~~~~
+
+Use the :class:`~airflow.providers.dbt.cloud.operators.dbt.DbtCloudListJobsOperator` to list
+all jobs tied to a specified dbt Cloud account. The ``account_id`` must be supplied either
+through the connection or supplied as a parameter to the task.
+
+If a ``project_id`` is supplied, only jobs pertaining to this project id will be retrieved.
+
+For more information on dbt Cloud list jobs, reference
+`this documentation <https://docs.getdbt.com/dbt-cloud/api-v2#tag/Jobs/operation/listJobsForAccount>`__.
+
+.. exampleinclude:: /../../providers/tests/system/dbt/cloud/example_dbt_cloud.py
+    :language: python
+    :dedent: 4
+    :start-after: [START howto_operator_dbt_cloud_list_jobs]
+    :end-before: [END howto_operator_dbt_cloud_list_jobs]

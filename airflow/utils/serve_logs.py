@@ -14,64 +14,131 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+"""Serve logs process."""
 
-"""Serve logs process"""
+from __future__ import annotations
+
+import logging
 import os
-import time
+import socket
+from collections import namedtuple
 
 import gunicorn.app.base
 from flask import Flask, abort, request, send_from_directory
-from itsdangerous import TimedJSONWebSignatureSerializer
+from jwt.exceptions import (
+    ExpiredSignatureError,
+    ImmatureSignatureError,
+    InvalidAudienceError,
+    InvalidIssuedAtError,
+    InvalidSignatureError,
+)
 from setproctitle import setproctitle
+from werkzeug.exceptions import HTTPException
 
 from airflow.configuration import conf
+from airflow.utils.docs import get_docs_url
+from airflow.utils.jwt_signer import JWTSigner
+from airflow.utils.module_loading import import_string
+
+logger = logging.getLogger(__name__)
 
 
 def create_app():
     flask_app = Flask(__name__, static_folder=None)
-    max_request_age = conf.getint('webserver', 'log_request_clock_grace', fallback=30)
-    log_directory = os.path.expanduser(conf.get('logging', 'BASE_LOG_FOLDER'))
-
-    signer = TimedJSONWebSignatureSerializer(
-        secret_key=conf.get('webserver', 'secret_key'),
-        algorithm_name='HS512',
-        expires_in=max_request_age,
-        # This isn't really a "salt", more of a signing context
-        salt='task-instance-logs',
+    expiration_time_in_seconds = conf.getint("webserver", "log_request_clock_grace", fallback=30)
+    log_directory = os.path.expanduser(conf.get("logging", "BASE_LOG_FOLDER"))
+    log_config_class = conf.get("logging", "logging_config_class")
+    if log_config_class:
+        logger.info("Detected user-defined logging config. Attempting to load %s", log_config_class)
+        try:
+            logging_config = import_string(log_config_class)
+            try:
+                base_log_folder = logging_config["handlers"]["task"]["base_log_folder"]
+            except KeyError:
+                base_log_folder = None
+            if base_log_folder is not None:
+                log_directory = base_log_folder
+                logger.info(
+                    "Successfully imported user-defined logging config. Flask App will serve log from %s",
+                    log_directory,
+                )
+            else:
+                logger.warning(
+                    "User-defined logging config does not specify 'base_log_folder'. "
+                    "Flask App will use default log directory %s",
+                    base_log_folder,
+                )
+        except Exception as e:
+            raise ImportError(f"Unable to load {log_config_class} due to error: {e}")
+    signer = JWTSigner(
+        secret_key=conf.get("webserver", "secret_key"),
+        expiration_time_in_seconds=expiration_time_in_seconds,
+        audience="task-instance-logs",
     )
 
     # Prevent direct access to the logs port
     @flask_app.before_request
     def validate_pre_signed_url():
         try:
-            auth = request.headers['Authorization']
-
-            # We don't actually care about the payload, just that the signature
-            # was valid and the `exp` claim is correct
-            filename, headers = signer.loads(auth, return_header=True)
-
-            issued_at = int(headers['iat'])
-            expires_at = int(headers['exp'])
+            auth = request.headers.get("Authorization")
+            if auth is None:
+                logger.warning("The Authorization header is missing: %s.", request.headers)
+                abort(403)
+            payload = signer.verify_token(auth)
+            token_filename = payload.get("filename")
+            request_filename = request.view_args["filename"]
+            if token_filename is None:
+                logger.warning("The payload does not contain 'filename' key: %s.", payload)
+                abort(403)
+            if token_filename != request_filename:
+                logger.warning(
+                    "The payload log_relative_path key is different than the one in token:"
+                    "Request path: %s. Token path: %s.",
+                    request_filename,
+                    token_filename,
+                )
+                abort(403)
+        except HTTPException:
+            raise
+        except InvalidAudienceError:
+            logger.warning("Invalid audience for the request", exc_info=True)
+            abort(403)
+        except InvalidSignatureError:
+            logger.warning("The signature of the request was wrong", exc_info=True)
+            abort(403)
+        except ImmatureSignatureError:
+            logger.warning("The signature of the request was sent from the future", exc_info=True)
+            abort(403)
+        except ExpiredSignatureError:
+            logger.warning(
+                "The signature of the request has expired. Make sure that all components "
+                "in your system have synchronized clocks. "
+                "See more at %s",
+                get_docs_url("configurations-ref.html#secret-key"),
+                exc_info=True,
+            )
+            abort(403)
+        except InvalidIssuedAtError:
+            logger.warning(
+                "The request was issues in the future. Make sure that all components "
+                "in your system have synchronized clocks. "
+                "See more at %s",
+                get_docs_url("configurations-ref.html#secret-key"),
+                exc_info=True,
+            )
+            abort(403)
         except Exception:
+            logger.warning("Unknown error", exc_info=True)
             abort(403)
 
-        if filename != request.view_args['filename']:
-            abort(403)
-
-        # Validate the `iat` and `exp` are within `max_request_age` of now.
-        now = int(time.time())
-        if abs(now - issued_at) > max_request_age:
-            abort(403)
-        if abs(now - expires_at) > max_request_age:
-            abort(403)
-        if issued_at > expires_at or expires_at - issued_at > max_request_age:
-            abort(403)
-
-    @flask_app.route('/log/<path:filename>')
+    @flask_app.route("/log/<path:filename>")
     def serve_logs_view(filename):
         return send_from_directory(log_directory, filename, mimetype="application/json", as_attachment=False)
 
     return flask_app
+
+
+GunicornOption = namedtuple("GunicornOption", ["key", "value"])
 
 
 class StandaloneGunicornApplication(gunicorn.app.base.BaseApplication):
@@ -86,30 +153,35 @@ class StandaloneGunicornApplication(gunicorn.app.base.BaseApplication):
     """
 
     def __init__(self, app, options=None):
-        self.options = options or {}
+        self.options = options or []
         self.application = app
         super().__init__()
 
     def load_config(self):
-        for key, value in self.options.items():
-            self.cfg.set(key.lower(), value)
+        for option in self.options:
+            self.cfg.set(option.key.lower(), option.value)
 
     def load(self):
         return self.application
 
 
-def serve_logs():
-    """Serves logs generated by Worker"""
+def serve_logs(port=None):
+    """Serve logs generated by Worker."""
     setproctitle("airflow serve-logs")
     wsgi_app = create_app()
 
-    worker_log_server_port = conf.getint('logging', 'WORKER_LOG_SERVER_PORT')
-    options = {
-        'bind': f"0.0.0.0:{worker_log_server_port}",
-        'workers': 2,
-    }
+    port = port or conf.getint("logging", "WORKER_LOG_SERVER_PORT")
+
+    # If dual stack is available and IPV6_V6ONLY is not enabled on the socket
+    # then when IPV6 is bound to it will also bind to IPV4 automatically
+    if getattr(socket, "has_dualstack_ipv6", lambda: False)():
+        bind_option = GunicornOption("bind", f"[::]:{port}")
+    else:
+        bind_option = GunicornOption("bind", f"0.0.0.0:{port}")
+
+    options = [bind_option, GunicornOption("workers", 2)]
     StandaloneGunicornApplication(wsgi_app, options).run()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     serve_logs()

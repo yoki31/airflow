@@ -15,15 +15,22 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
+from __future__ import annotations
 
 import pytest
 
 from airflow.decorators import task
 from airflow.utils.state import State
 
+pytestmark = pytest.mark.db_test
+
 
 class Test_BranchPythonDecoratedOperator:
+    # when run in "Parallel" test run environment, sometimes this test runs for a long time
+    # because creating virtualenv and starting new Python interpreter creates a lot of IO/contention
+    # possibilities. So we are increasing the timeout for this test to 3x of the default timeout
+    @pytest.mark.skip_if_database_isolation_mode  # Test is broken in db isolation mode
+    @pytest.mark.execution_timeout(180)
     @pytest.mark.parametrize("branch_task_name", ["task_1", "task_2"])
     def test_branch_one(self, dag_maker, branch_task_name):
         @task
@@ -53,12 +60,12 @@ class Test_BranchPythonDecoratedOperator:
             branchoperator.set_downstream(task_2)
 
         dr = dag_maker.create_dagrun()
-        df.operator.run(start_date=dr.execution_date, end_date=dr.execution_date, ignore_ti_state=True)
+        df.operator.run(start_date=dr.logical_date, end_date=dr.logical_date, ignore_ti_state=True)
         branchoperator.operator.run(
-            start_date=dr.execution_date, end_date=dr.execution_date, ignore_ti_state=True
+            start_date=dr.logical_date, end_date=dr.logical_date, ignore_ti_state=True
         )
-        task_1.operator.run(start_date=dr.execution_date, end_date=dr.execution_date, ignore_ti_state=True)
-        task_2.operator.run(start_date=dr.execution_date, end_date=dr.execution_date, ignore_ti_state=True)
+        task_1.operator.run(start_date=dr.logical_date, end_date=dr.logical_date, ignore_ti_state=True)
+        task_2.operator.run(start_date=dr.logical_date, end_date=dr.logical_date, ignore_ti_state=True)
         tis = dr.get_task_instances()
 
         for ti in tis:

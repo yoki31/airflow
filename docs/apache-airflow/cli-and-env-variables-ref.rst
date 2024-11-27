@@ -28,11 +28,20 @@ many types of operation on a DAG, starting services, and supporting
 development and testing.
 
 .. note::
-    For more information on usage CLI, see :doc:`usage-cli`
+    For more information on usage CLI, see :doc:`/howto/usage-cli`
 
 .. contents:: Content
     :local:
     :depth: 2
+
+Providers that implement executors might contribute additional commands to the CLI. Here are the commands
+contributed by the community providers:
+
+* Celery Executor and related CLI commands: :doc:`apache-airflow-providers-celery:cli-ref`
+* Kubernetes Executor and related CLI commands: :doc:`apache-airflow-providers-cncf-kubernetes:cli-ref`
+* Edge Executor and related CLI commands: :doc:`apache-airflow-providers-edge:cli-ref`
+* AWS and related CLI commands: :doc:`apache-airflow-providers-amazon:cli-ref`
+* The ``users`` and ``roles`` CLI commands are described in FAB provider documentation :doc:`apache-airflow-providers-fab:cli-ref`
 
 .. argparse::
    :module: airflow.cli.cli_parser
@@ -61,7 +70,7 @@ Environment Variables
 
   This is only supported by the following config options:
 
-* ``sql_alchemy_conn`` in ``[core]`` section
+* ``sql_alchemy_conn`` in ``[database]`` section
 * ``fernet_key`` in ``[core]`` section
 * ``broker_url`` in ``[celery]`` section
 * ``flower_basic_auth`` in ``[celery]`` section
@@ -90,7 +99,7 @@ Environment Variables
   For example, if you want to create a connection named ``PROXY_POSTGRES_TCP``, you can create
   a key ``AIRFLOW_CONN_PROXY_POSTGRES_TCP`` with the connection URI as the value.
 
-  For more information, see: :ref:`environment_variables_secrets_backend`.
+  For more information, see: :ref:`environment_variables_connections`.
 
 .. envvar:: AIRFLOW_HOME
 

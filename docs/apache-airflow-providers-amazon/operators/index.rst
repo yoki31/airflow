@@ -25,5 +25,8 @@ Amazon AWS Operators
     :maxdepth: 1
     :glob:
 
+    athena/index
+    emr/index
+    redshift/index
+    s3/index
     *
-    transfer/index

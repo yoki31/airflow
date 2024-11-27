@@ -15,24 +15,28 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
 """Table to store information about mapped task instances (AIP-42)."""
+
+from __future__ import annotations
 
 import collections.abc
 import enum
-from typing import TYPE_CHECKING, Any, Collection, List, Optional
+from collections.abc import Collection
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import CheckConstraint, Column, ForeignKeyConstraint, Integer, String
 
-from airflow.models.base import COLLATION_ARGS, ID_LEN, Base
+from airflow.models.base import COLLATION_ARGS, ID_LEN, TaskInstanceDependencies
 from airflow.utils.sqlalchemy import ExtendedJSON
 
 if TYPE_CHECKING:
     from airflow.models.taskinstance import TaskInstance
+    from airflow.serialization.pydantic.taskinstance import TaskInstancePydantic
 
 
 class TaskMapVariant(enum.Enum):
-    """Task map variant.
+    """
+    Task map variant.
 
     Possible values are **dict** (for a key-value mapping) and **list** (for an
     ordered value sequence).
@@ -42,8 +46,9 @@ class TaskMapVariant(enum.Enum):
     LIST = "list"
 
 
-class TaskMap(Base):
-    """Model to track dynamic task-mapping information.
+class TaskMap(TaskInstanceDependencies):
+    """
+    Model to track dynamic task-mapping information.
 
     This is currently only populated by an upstream TaskInstance pushing an
     XCom that's pulled by a downstream for mapping purposes.
@@ -72,6 +77,7 @@ class TaskMap(Base):
             ],
             name="task_map_task_instance_fkey",
             ondelete="CASCADE",
+            onupdate="CASCADE",
         ),
     )
 
@@ -82,7 +88,7 @@ class TaskMap(Base):
         run_id: str,
         map_index: int,
         length: int,
-        keys: Optional[List[Any]],
+        keys: list[Any] | None,
     ) -> None:
         self.dag_id = dag_id
         self.task_id = task_id
@@ -92,7 +98,7 @@ class TaskMap(Base):
         self.keys = keys
 
     @classmethod
-    def from_task_instance_xcom(cls, ti: "TaskInstance", value: Collection) -> "TaskMap":
+    def from_task_instance_xcom(cls, ti: TaskInstance | TaskInstancePydantic, value: Collection) -> TaskMap:
         if ti.run_id is None:
             raise ValueError("cannot record task map for unrun task instance")
         return cls(

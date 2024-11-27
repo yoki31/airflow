@@ -14,10 +14,12 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""Custom logging formatter for Airflow"""
+"""Custom logging formatter for Airflow."""
+
+from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from airflow.configuration import conf
 from airflow.utils.helpers import parse_template_string, render_template_to_string
@@ -28,10 +30,13 @@ if TYPE_CHECKING:
     from airflow.models.taskinstance import TaskInstance
 
 
-class TaskHandlerWithCustomFormatter(logging.StreamHandler):
-    """Custom implementation of StreamHandler, a class which writes logging records for Airflow"""
+logger = logging.getLogger(__name__)
 
-    prefix_jinja_template: Optional["Template"] = None
+
+class TaskHandlerWithCustomFormatter(logging.StreamHandler):
+    """Custom implementation of StreamHandler, a class which writes logging records for Airflow."""
+
+    prefix_jinja_template: Template | None = None
 
     def set_context(self, ti) -> None:
         """
@@ -40,9 +45,10 @@ class TaskHandlerWithCustomFormatter(logging.StreamHandler):
         :param ti:
         :return:
         """
-        if ti.raw or self.formatter is None:
+        # Returns if there is no formatter or if the prefix has already been set
+        if ti.raw or self.formatter is None or self.prefix_jinja_template is not None:
             return
-        prefix = conf.get('logging', 'task_log_prefix_template')
+        prefix = conf.get("logging", "task_log_prefix_template")
 
         if prefix:
             _, self.prefix_jinja_template = parse_template_string(prefix)
@@ -53,9 +59,9 @@ class TaskHandlerWithCustomFormatter(logging.StreamHandler):
         self.setFormatter(formatter)
         self.setLevel(self.level)
 
-    def _render_prefix(self, ti: "TaskInstance") -> str:
+    def _render_prefix(self, ti: TaskInstance) -> str:
         if self.prefix_jinja_template:
             jinja_context = ti.get_template_context()
             return render_template_to_string(self.prefix_jinja_template, jinja_context)
-        logging.warning("'task_log_prefix_template' is in invalid format, ignoring the variable value")
+        logger.warning("'task_log_prefix_template' is in invalid format, ignoring the variable value")
         return ""

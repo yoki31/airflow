@@ -16,381 +16,293 @@
 # specific language governing permissions and limitations
 # under the License.
 """
-LocalExecutor
+LocalExecutor.
 
 .. seealso::
     For more information on how the LocalExecutor works, take a look at the guide:
     :ref:`executor:LocalExecutor`
 """
+
+from __future__ import annotations
+
+import ctypes
 import logging
+import multiprocessing
+import multiprocessing.sharedctypes
 import os
 import subprocess
-from abc import abstractmethod
-from multiprocessing import Manager, Process
-from multiprocessing.managers import SyncManager
-from queue import Empty, Queue
-from typing import Any, List, Optional, Tuple, Union
+from multiprocessing import Queue, SimpleQueue
+from typing import TYPE_CHECKING, Any, Optional
 
-from setproctitle import getproctitle, setproctitle
+from setproctitle import setproctitle
 
 from airflow import settings
-from airflow.exceptions import AirflowException
-from airflow.executors.base_executor import NOT_STARTED_MESSAGE, PARALLELISM, BaseExecutor, CommandType
-from airflow.models.taskinstance import TaskInstanceKey, TaskInstanceStateType
-from airflow.utils.log.logging_mixin import LoggingMixin
-from airflow.utils.state import State
+from airflow.executors.base_executor import PARALLELISM, BaseExecutor
+from airflow.traces.tracer import add_span
+from airflow.utils.dag_parsing_context import _airflow_parsing_context_manager
+from airflow.utils.state import TaskInstanceState
 
-# This is a work to be executed by a worker.
-# It can Key and Command - but it can also be None, None which is actually a
-# "Poison Pill" - worker seeing Poison Pill should take the pill and ... die instantly.
-ExecutorWorkType = Tuple[Optional[TaskInstanceKey], Optional[CommandType]]
+if TYPE_CHECKING:
+    from airflow.executors.base_executor import CommandType
+    from airflow.models.taskinstancekey import TaskInstanceKey
+
+    # This is a work to be executed by a worker.
+    # It can Key and Command - but it can also be None, None which is actually a
+    # "Poison Pill" - worker seeing Poison Pill should take the pill and ... die instantly.
+    ExecutorWorkType = Optional[tuple[TaskInstanceKey, CommandType]]
+    TaskInstanceStateType = tuple[TaskInstanceKey, TaskInstanceState, Optional[Exception]]
 
 
-class LocalWorkerBase(Process, LoggingMixin):
-    """
-    LocalWorkerBase implementation to run airflow commands. Executes the given
-    command and puts the result into a result queue when done, terminating execution.
+def _run_worker(
+    logger_name: str,
+    input: SimpleQueue[ExecutorWorkType],
+    output: Queue[TaskInstanceStateType],
+    unread_messages: multiprocessing.sharedctypes.Synchronized[int],
+):
+    import signal
 
-    :param result_queue: the queue to store result state
-    """
+    # Ignore ctrl-c in this process -- we don't want to kill _this_ one. we let tasks run to completion
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
 
-    def __init__(self, result_queue: 'Queue[TaskInstanceStateType]'):
-        super().__init__(target=self.do_work)
-        self.daemon: bool = True
-        self.result_queue: 'Queue[TaskInstanceStateType]' = result_queue
+    log = logging.getLogger(logger_name)
 
-    def run(self):
-        # We know we've just started a new process, so lets disconnect from the metadata db now
-        settings.engine.pool.dispose()
-        settings.engine.dispose()
-        setproctitle("airflow worker -- LocalExecutor")
-        return super().run()
+    # We know we've just started a new process, so lets disconnect from the metadata db now
+    settings.engine.pool.dispose()
+    settings.engine.dispose()
 
-    def execute_work(self, key: TaskInstanceKey, command: CommandType) -> None:
-        """
-        Executes command received and stores result state in queue.
+    setproctitle("airflow worker -- LocalExecutor: <idle>")
 
-        :param key: the key to identify the task instance
-        :param command: the command to execute
-        """
-        if key is None:
+    while True:
+        try:
+            item = input.get()
+        except EOFError:
+            log.info(
+                "Failed to read tasks from the task queue because the other "
+                "end has closed the connection. Terminating worker %s.",
+                multiprocessing.current_process().name,
+            )
+            break
+
+        if item is None:
+            # Received poison pill, no more tasks to run
             return
 
-        self.log.info("%s running %s", self.__class__.__name__, command)
-        setproctitle(f"airflow worker -- LocalExecutor: {command}")
-        if settings.EXECUTE_TASKS_NEW_PYTHON_INTERPRETER:
-            state = self._execute_work_in_subprocess(command)
-        else:
-            state = self._execute_work_in_fork(command)
+        # Decrement this as soon as we pick up a message off the queue
+        with unread_messages:
+            unread_messages.value -= 1
 
-        self.result_queue.put((key, state))
-        # Remove the command since the worker is done executing the task
-        setproctitle("airflow worker -- LocalExecutor")
-
-    def _execute_work_in_subprocess(self, command: CommandType) -> str:
+        (key, command) = item
         try:
-            subprocess.check_call(command, close_fds=True)
-            return State.SUCCESS
-        except subprocess.CalledProcessError as e:
-            self.log.error("Failed to execute task %s.", str(e))
-            return State.FAILED
+            state = _execute_work(log, key, command)
 
-    def _execute_work_in_fork(self, command: CommandType) -> str:
-        pid = os.fork()
-        if pid:
-            # In parent, wait for the child
-            pid, ret = os.waitpid(pid, 0)
-            return State.SUCCESS if ret == 0 else State.FAILED
-
-        from airflow.sentry import Sentry
-
-        ret = 1
-        try:
-            import signal
-
-            from airflow.cli.cli_parser import get_parser
-
-            signal.signal(signal.SIGINT, signal.SIG_DFL)
-            signal.signal(signal.SIGTERM, signal.SIG_DFL)
-            signal.signal(signal.SIGUSR2, signal.SIG_DFL)
-
-            parser = get_parser()
-            # [1:] - remove "airflow" from the start of the command
-            args = parser.parse_args(command[1:])
-            args.shut_down_logging = False
-
-            setproctitle(f"airflow task supervisor: {command}")
-
-            args.func(args)
-            ret = 0
-            return State.SUCCESS
+            output.put((key, state, None))
         except Exception as e:
-            self.log.exception("Failed to execute task %s.", e)
-            return State.FAILED
-        finally:
-            Sentry.flush()
-            logging.shutdown()
-            os._exit(ret)
-
-    @abstractmethod
-    def do_work(self):
-        """Called in the subprocess and should then execute tasks"""
-        raise NotImplementedError()
+            output.put((key, TaskInstanceState.FAILED, e))
 
 
-class LocalWorker(LocalWorkerBase):
+def _execute_work(log: logging.Logger, key: TaskInstanceKey, command: CommandType) -> TaskInstanceState:
     """
-    Local worker that executes the task.
+    Execute command received and stores result state in queue.
 
-    :param result_queue: queue where results of the tasks are put.
-    :param key: key identifying task instance
-    :param command: Command to execute
+    :param key: the key to identify the task instance
+    :param command: the command to execute
     """
+    setproctitle(f"airflow worker -- LocalExecutor: {command}")
+    dag_id, task_id = BaseExecutor.validate_airflow_tasks_run_command(command)
+    try:
+        with _airflow_parsing_context_manager(dag_id=dag_id, task_id=task_id):
+            if settings.EXECUTE_TASKS_NEW_PYTHON_INTERPRETER:
+                return _execute_work_in_subprocess(log, command)
+            else:
+                return _execute_work_in_fork(log, command)
+    finally:
+        # Remove the command since the worker is done executing the task
+        setproctitle("airflow worker -- LocalExecutor: <idle>")
 
-    def __init__(
-        self, result_queue: 'Queue[TaskInstanceStateType]', key: TaskInstanceKey, command: CommandType
-    ):
-        super().__init__(result_queue)
-        self.key: TaskInstanceKey = key
-        self.command: CommandType = command
 
-    def do_work(self) -> None:
-        self.execute_work(key=self.key, command=self.command)
+def _execute_work_in_subprocess(log: logging.Logger, command: CommandType) -> TaskInstanceState:
+    try:
+        subprocess.check_call(command, close_fds=True)
+        return TaskInstanceState.SUCCESS
+    except subprocess.CalledProcessError as e:
+        log.error("Failed to execute task %s.", e)
+        return TaskInstanceState.FAILED
 
 
-class QueuedLocalWorker(LocalWorkerBase):
-    """
-    LocalWorker implementation that is waiting for tasks from a queue and will
-    continue executing commands as they become available in the queue.
-    It will terminate execution once the poison token is found.
+def _execute_work_in_fork(log: logging.Logger, command: CommandType) -> TaskInstanceState:
+    pid = os.fork()
+    if pid:
+        # In parent, wait for the child
+        pid, ret = os.waitpid(pid, 0)
+        return TaskInstanceState.SUCCESS if ret == 0 else TaskInstanceState.FAILED
 
-    :param task_queue: queue from which worker reads tasks
-    :param result_queue: queue where worker puts results after finishing tasks
-    """
+    from airflow.sentry import Sentry
 
-    def __init__(self, task_queue: 'Queue[ExecutorWorkType]', result_queue: 'Queue[TaskInstanceStateType]'):
-        super().__init__(result_queue=result_queue)
-        self.task_queue = task_queue
+    ret = 1
+    try:
+        import signal
 
-    def do_work(self) -> None:
-        while True:
-            try:
-                key, command = self.task_queue.get()
-            except EOFError:
-                self.log.info(
-                    "Failed to read tasks from the task queue because the other "
-                    "end has closed the connection. Terminating worker %s.",
-                    self.name,
-                )
-                break
-            try:
-                if key is None or command is None:
-                    # Received poison pill, no more tasks to run
-                    break
-                self.execute_work(key=key, command=command)
-            finally:
-                self.task_queue.task_done()
+        from airflow.cli.cli_parser import get_parser
+
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        signal.signal(signal.SIGUSR2, signal.SIG_DFL)
+
+        parser = get_parser()
+        # [1:] - remove "airflow" from the start of the command
+        args = parser.parse_args(command[1:])
+        args.shut_down_logging = False
+
+        setproctitle(f"airflow task supervisor: {command}")
+
+        args.func(args)
+        ret = 0
+        return TaskInstanceState.SUCCESS
+    except Exception as e:
+        log.exception("Failed to execute task %s.", e)
+        return TaskInstanceState.FAILED
+    finally:
+        Sentry.flush()
+        logging.shutdown()
+        os._exit(ret)
 
 
 class LocalExecutor(BaseExecutor):
     """
     LocalExecutor executes tasks locally in parallel.
-    It uses the multiprocessing Python library and queues to parallelize the execution
-    of tasks.
+
+    It uses the multiprocessing Python library and queues to parallelize the execution of tasks.
 
     :param parallelism: how many parallel processes are run in the executor
     """
 
+    is_local: bool = True
+
+    serve_logs: bool = True
+
+    activity_queue: SimpleQueue[ExecutorWorkType]
+    result_queue: SimpleQueue[TaskInstanceStateType]
+    workers: dict[int, multiprocessing.Process]
+    _unread_messages: multiprocessing.sharedctypes.Synchronized[int]
+
     def __init__(self, parallelism: int = PARALLELISM):
         super().__init__(parallelism=parallelism)
-        self.manager: Optional[SyncManager] = None
-        self.result_queue: Optional['Queue[TaskInstanceStateType]'] = None
-        self.workers: List[QueuedLocalWorker] = []
-        self.workers_used: int = 0
-        self.workers_active: int = 0
-        self.impl: Optional[
-            Union['LocalExecutor.UnlimitedParallelism', 'LocalExecutor.LimitedParallelism']
-        ] = None
-
-    class UnlimitedParallelism:
-        """
-        Implements LocalExecutor with unlimited parallelism, starting one process
-        per each command to execute.
-
-        :param executor: the executor instance to implement.
-        """
-
-        def __init__(self, executor: 'LocalExecutor'):
-            self.executor: 'LocalExecutor' = executor
-
-        def start(self) -> None:
-            """Starts the executor."""
-            self.executor.workers_used = 0
-            self.executor.workers_active = 0
-
-        def execute_async(
-            self,
-            key: TaskInstanceKey,
-            command: CommandType,
-            queue: Optional[str] = None,
-            executor_config: Optional[Any] = None,
-        ) -> None:
-            """
-            Executes task asynchronously.
-
-            :param key: the key to identify the task instance
-            :param command: the command to execute
-            :param queue: Name of the queue
-            :param executor_config: configuration for the executor
-            """
-            if not self.executor.result_queue:
-                raise AirflowException(NOT_STARTED_MESSAGE)
-            local_worker = LocalWorker(self.executor.result_queue, key=key, command=command)
-            self.executor.workers_used += 1
-            self.executor.workers_active += 1
-            local_worker.start()
-
-        def sync(self) -> None:
-            """Sync will get called periodically by the heartbeat method."""
-            if not self.executor.result_queue:
-                raise AirflowException("Executor should be started first")
-            while not self.executor.result_queue.empty():
-                results = self.executor.result_queue.get()
-                self.executor.change_state(*results)
-                self.executor.workers_active -= 1
-
-        def end(self) -> None:
-            """
-            This method is called when the caller is done submitting job and
-            wants to wait synchronously for the job submitted previously to be
-            all done.
-            """
-            while self.executor.workers_active > 0:
-                self.executor.sync()
-
-    class LimitedParallelism:
-        """
-        Implements LocalExecutor with limited parallelism using a task queue to
-        coordinate work distribution.
-
-        :param executor: the executor instance to implement.
-        """
-
-        def __init__(self, executor: 'LocalExecutor'):
-            self.executor: 'LocalExecutor' = executor
-            self.queue: Optional['Queue[ExecutorWorkType]'] = None
-
-        def start(self) -> None:
-            """Starts limited parallelism implementation."""
-            if not self.executor.manager:
-                raise AirflowException(NOT_STARTED_MESSAGE)
-            self.queue = self.executor.manager.Queue()
-            if not self.executor.result_queue:
-                raise AirflowException(NOT_STARTED_MESSAGE)
-            self.executor.workers = [
-                QueuedLocalWorker(self.queue, self.executor.result_queue)
-                for _ in range(self.executor.parallelism)
-            ]
-
-            self.executor.workers_used = len(self.executor.workers)
-
-            for worker in self.executor.workers:
-                worker.start()
-
-        def execute_async(
-            self,
-            key: TaskInstanceKey,
-            command: CommandType,
-            queue: Optional[str] = None,
-            executor_config: Optional[Any] = None,
-        ) -> None:
-            """
-            Executes task asynchronously.
-
-            :param key: the key to identify the task instance
-            :param command: the command to execute
-            :param queue: name of the queue
-            :param executor_config: configuration for the executor
-            """
-            if not self.queue:
-                raise AirflowException(NOT_STARTED_MESSAGE)
-            self.queue.put((key, command))
-
-        def sync(self):
-            """Sync will get called periodically by the heartbeat method."""
-            while True:
-                try:
-                    results = self.executor.result_queue.get_nowait()
-                    try:
-                        self.executor.change_state(*results)
-                    finally:
-                        self.executor.result_queue.task_done()
-                except Empty:
-                    break
-
-        def end(self):
-            """Ends the executor. Sends the poison pill to all workers."""
-            for _ in self.executor.workers:
-                self.queue.put((None, None))
-
-            # Wait for commands to finish
-            self.queue.join()
-            self.executor.sync()
+        if self.parallelism < 0:
+            raise ValueError("parallelism must be greater than or equal to 0")
 
     def start(self) -> None:
-        """Starts the executor"""
-        old_proctitle = getproctitle()
-        setproctitle("airflow executor -- LocalExecutor")
-        self.manager = Manager()
-        setproctitle(old_proctitle)
-        self.result_queue = self.manager.Queue()
-        self.workers = []
-        self.workers_used = 0
-        self.workers_active = 0
-        self.impl = (
-            LocalExecutor.UnlimitedParallelism(self)
-            if self.parallelism == 0
-            else LocalExecutor.LimitedParallelism(self)
-        )
+        """Start the executor."""
+        # We delay opening these queues until the start method mostly for unit tests. ExecutorLoader caches
+        # instances, so each test reusues the same instance! (i.e. test 1 runs, closes the queues, then test 2
+        # comes back and gets the same LocalExecutor instance, so we have to open new here.)
+        self.activity_queue = SimpleQueue()
+        self.result_queue = SimpleQueue()
+        self.workers = {}
 
-        self.impl.start()
+        # Mypy sees this value as `SynchronizedBase[c_uint]`, but that isn't the right runtime type behaviour
+        # (it looks like an int to python)
+        self._unread_messages = multiprocessing.Value(ctypes.c_uint)  # type: ignore[assignment]
 
+    @add_span
     def execute_async(
         self,
         key: TaskInstanceKey,
         command: CommandType,
-        queue: Optional[str] = None,
-        executor_config: Optional[Any] = None,
+        queue: str | None = None,
+        executor_config: Any | None = None,
     ) -> None:
         """Execute asynchronously."""
-        if not self.impl:
-            raise AirflowException(NOT_STARTED_MESSAGE)
+        self.validate_airflow_tasks_run_command(command)
+        self.activity_queue.put((key, command))
+        with self._unread_messages:
+            self._unread_messages.value += 1
+        self._check_workers(can_start=True)
 
-        self.validate_command(command)
+    def _check_workers(self, can_start: bool = True):
+        # Reap any dead workers
+        to_remove = set()
+        for pid, proc in self.workers.items():
+            if not proc.is_alive():
+                to_remove.add(pid)
+                proc.close()
 
-        self.impl.execute_async(key=key, command=command, queue=queue, executor_config=executor_config)
+        if to_remove:
+            self.workers = {pid: proc for pid, proc in self.workers.items() if pid not in to_remove}
+
+        with self._unread_messages:
+            num_outstanding = self._unread_messages.value
+
+        if num_outstanding <= 0 or self.activity_queue.empty():
+            # Nothing to do. Future enhancement if someone wants: shut down workers that have been idle for N
+            # seconds
+            return
+
+        # If we're using spawn in multiprocessing (default on macOS now) to start tasks, this can get called a
+        # via `sync()` a few times before the spawned process actually starts picking up messages. Try not to
+        # create too much
+        need_more_workers = len(self.workers) < num_outstanding
+        if need_more_workers and (self.parallelism == 0 or len(self.workers) < self.parallelism):
+            # This only creates one worker, which is fine as we call this directly after putting a message on
+            # activity_queue in execute_async
+            self._spawn_worker()
+
+    def _spawn_worker(self):
+        p = multiprocessing.Process(
+            target=_run_worker,
+            kwargs={
+                "logger_name": self.log.name,
+                "input": self.activity_queue,
+                "output": self.result_queue,
+                "unread_messages": self._unread_messages,
+            },
+        )
+        p.start()
+        if TYPE_CHECKING:
+            assert p.pid  # Since we've called start
+        self.workers[p.pid] = p
 
     def sync(self) -> None:
         """Sync will get called periodically by the heartbeat method."""
-        if not self.impl:
-            raise AirflowException(NOT_STARTED_MESSAGE)
-        self.impl.sync()
+        self._read_results()
+        self._check_workers()
+
+    def _read_results(self):
+        while not self.result_queue.empty():
+            key, state, exc = self.result_queue.get()
+
+            if exc:
+                # TODO: This needs a better stacktrace, it appears from here
+                if hasattr(exc, "add_note"):
+                    exc.add_note("(This stacktrace is incorrect -- the exception came from a subprocess)")
+                raise exc
+
+            self.change_state(key, state)
 
     def end(self) -> None:
-        """
-        Ends the executor.
-        :return:
-        """
-        if not self.impl:
-            raise AirflowException(NOT_STARTED_MESSAGE)
-        if not self.manager:
-            raise AirflowException(NOT_STARTED_MESSAGE)
+        """End the executor."""
         self.log.info(
             "Shutting down LocalExecutor"
             "; waiting for running tasks to finish.  Signal again if you don't want to wait."
         )
-        self.impl.end()
-        self.manager.shutdown()
+
+        # We can't tell which proc will pick which close message up, so we send all the messages, and then
+        # wait on all the procs
+
+        for proc in self.workers.values():
+            # Send the shutdown message once for each alive worker
+            if proc.is_alive():
+                self.activity_queue.put(None)
+
+        for proc in self.workers.values():
+            if proc.is_alive():
+                proc.join()
+            proc.close()
+
+        # Process any extra results before closing
+        self._read_results()
+
+        self.activity_queue.close()
+        self.result_queue.close()
 
     def terminate(self):
         """Terminate the executor is not doing anything."""

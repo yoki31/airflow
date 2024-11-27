@@ -15,6 +15,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
 from airflow.exceptions import AirflowException
 from airflow.ti_deps.deps.base_ti_dep import BaseTIDep
@@ -37,13 +38,15 @@ class ValidStateDep(BaseTIDep):
         super().__init__()
 
         if not valid_states:
-            raise AirflowException('ValidStatesDep received an empty set of valid states.')
+            raise AirflowException("ValidStatesDep received an empty set of valid states.")
         self._valid_states = valid_states
 
     def __eq__(self, other):
+        """Check if two task instance dependencies are equal by comparing their types and valid states."""
         return isinstance(self, type(other)) and self._valid_states == other._valid_states
 
     def __hash__(self):
+        """Compute the hash value based on the type of the task instance dependency and its valid states."""
         return hash((type(self), tuple(self._valid_states)))
 
     @provide_session

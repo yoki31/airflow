@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
 import copy
 import datetime
@@ -21,6 +22,7 @@ import logging
 import os
 import sys
 import tempfile
+from typing import TYPE_CHECKING
 from unittest import mock
 
 import pendulum
@@ -28,22 +30,30 @@ import pytest
 
 from airflow import settings
 from airflow.config_templates.airflow_local_settings import DEFAULT_LOGGING_CONFIG
-from airflow.models import DagRun
-from airflow.operators.python import PythonOperator
+from airflow.models.tasklog import LogTemplate
+from airflow.providers.standard.operators.python import PythonOperator
 from airflow.timetables.base import DataInterval
 from airflow.utils import timezone
 from airflow.utils.log.log_reader import TaskLogReader
 from airflow.utils.log.logging_mixin import ExternalLoggingMixin
 from airflow.utils.state import TaskInstanceState
 from airflow.utils.types import DagRunType
-from tests.test_utils.config import conf_vars
-from tests.test_utils.db import clear_db_dags, clear_db_runs
+
+from tests_common.test_utils.config import conf_vars
+from tests_common.test_utils.db import clear_db_dags, clear_db_runs
+
+pytestmark = [pytest.mark.db_test, pytest.mark.skip_if_database_isolation_mode]
+
+
+if TYPE_CHECKING:
+    from airflow.models import DagRun
 
 
 class TestLogView:
     DAG_ID = "dag_log_reader"
     TASK_ID = "task_log_reader"
     DEFAULT_DATE = timezone.datetime(2017, 9, 1)
+    FILENAME_TEMPLATE = "{{ ti.dag_id }}/{{ ti.task_id }}/{{ ts | replace(':', '.') }}/{{ try_number }}.log"
 
     @pytest.fixture(autouse=True)
     def log_dir(self):
@@ -70,14 +80,11 @@ class TestLogView:
     def configure_loggers(self, log_dir, settings_folder):
         logging_config = copy.deepcopy(DEFAULT_LOGGING_CONFIG)
         logging_config["handlers"]["task"]["base_log_folder"] = log_dir
-        logging_config["handlers"]["task"][
-            "filename_template"
-        ] = "{{ ti.dag_id }}/{{ ti.task_id }}/{{ ts | replace(':', '.') }}/{{ try_number }}.log"
-        settings_file = os.path.join(settings_folder, "airflow_local_settings.py")
+        settings_file = os.path.join(settings_folder, "airflow_local_settings_test.py")
         with open(settings_file, "w") as handle:
             new_logging_file = f"LOGGING_CONFIG = {logging_config}"
             handle.writelines(new_logging_file)
-        with conf_vars({("logging", "logging_config_class"): "airflow_local_settings.LOGGING_CONFIG"}):
+        with conf_vars({("logging", "logging_config_class"): "airflow_local_settings_test.LOGGING_CONFIG"}):
             settings.configure_logging()
         yield
         logging.config.dictConfig(DEFAULT_LOGGING_CONFIG)
@@ -93,105 +100,99 @@ class TestLogView:
 
     @pytest.fixture(autouse=True)
     def prepare_db(self, create_task_instance):
+        session = settings.Session()
+        log_template = LogTemplate(filename=self.FILENAME_TEMPLATE, elasticsearch_id="")
+        session.add(log_template)
+        session.commit()
         ti = create_task_instance(
             dag_id=self.DAG_ID,
             task_id=self.TASK_ID,
             start_date=self.DEFAULT_DATE,
             run_type=DagRunType.SCHEDULED,
-            execution_date=self.DEFAULT_DATE,
+            logical_date=self.DEFAULT_DATE,
             state=TaskInstanceState.RUNNING,
         )
         ti.try_number = 3
-        ti.hostname = 'localhost'
+        ti.hostname = "localhost"
         self.ti = ti
         yield
         clear_db_runs()
         clear_db_dags()
+        session.delete(log_template)
+        session.commit()
 
     def test_test_read_log_chunks_should_read_one_try(self):
         task_log_reader = TaskLogReader()
-        logs, metadatas = task_log_reader.read_log_chunks(ti=self.ti, try_number=1, metadata={})
-
-        assert [
+        ti = copy.copy(self.ti)
+        ti.state = TaskInstanceState.SUCCESS
+        logs, metadatas = task_log_reader.read_log_chunks(ti=ti, try_number=1, metadata={})
+        assert logs[0] == [
             (
-                'localhost',
-                f"*** Reading local file: "
-                f"{self.log_dir}/dag_log_reader/task_log_reader/2017-09-01T00.00.00+00.00/1.log\n"
-                f"try_number=1.\n",
+                "localhost",
+                " INFO - ::group::Log message source details\n"
+                "*** Found local files:\n"
+                f"***   * {self.log_dir}/dag_log_reader/task_log_reader/2017-09-01T00.00.00+00.00/1.log\n"
+                " INFO - ::endgroup::\n"
+                "try_number=1.",
             )
-        ] == logs[0]
-        assert {"end_of_log": True} == metadatas
+        ]
+        assert metadatas == {"end_of_log": True, "log_pos": 13}
 
     def test_test_read_log_chunks_should_read_all_files(self):
         task_log_reader = TaskLogReader()
-        logs, metadatas = task_log_reader.read_log_chunks(ti=self.ti, try_number=None, metadata={})
+        ti = copy.copy(self.ti)
+        ti.state = TaskInstanceState.SUCCESS
+        logs, metadatas = task_log_reader.read_log_chunks(ti=ti, try_number=None, metadata={})
 
-        assert [
-            [
-                (
-                    'localhost',
-                    "*** Reading local file: "
-                    f"{self.log_dir}/dag_log_reader/task_log_reader/2017-09-01T00.00.00+00.00/1.log\n"
-                    "try_number=1.\n",
-                )
-            ],
-            [
-                (
-                    'localhost',
-                    f"*** Reading local file: "
-                    f"{self.log_dir}/dag_log_reader/task_log_reader/2017-09-01T00.00.00+00.00/2.log\n"
-                    f"try_number=2.\n",
-                )
-            ],
-            [
-                (
-                    'localhost',
-                    f"*** Reading local file: "
-                    f"{self.log_dir}/dag_log_reader/task_log_reader/2017-09-01T00.00.00+00.00/3.log\n"
-                    f"try_number=3.\n",
-                )
-            ],
-        ] == logs
-        assert {"end_of_log": True} == metadatas
+        for i in range(0, 3):
+            assert logs[i][0][0] == "localhost"
+            assert (
+                "*** Found local files:\n"
+                f"***   * {self.log_dir}/dag_log_reader/task_log_reader/2017-09-01T00.00.00+00.00/{i + 1}.log\n"
+            ) in logs[i][0][1]
+            assert f"try_number={i + 1}." in logs[i][0][1]
+        assert metadatas == {"end_of_log": True, "log_pos": 13}
 
     def test_test_test_read_log_stream_should_read_one_try(self):
         task_log_reader = TaskLogReader()
-        stream = task_log_reader.read_log_stream(ti=self.ti, try_number=1, metadata={})
-
-        assert [
-            "localhost\n*** Reading local file: "
-            f"{self.log_dir}/dag_log_reader/task_log_reader/2017-09-01T00.00.00+00.00/1.log\n"
-            "try_number=1.\n"
-            "\n"
-        ] == list(stream)
+        ti = copy.copy(self.ti)
+        ti.state = TaskInstanceState.SUCCESS
+        stream = task_log_reader.read_log_stream(ti=ti, try_number=1, metadata={})
+        assert list(stream) == [
+            "localhost\n INFO - ::group::Log message source details\n*** Found local files:\n"
+            f"***   * {self.log_dir}/dag_log_reader/task_log_reader/2017-09-01T00.00.00+00.00/1.log\n"
+            " INFO - ::endgroup::\ntry_number=1.\n"
+        ]
 
     def test_test_test_read_log_stream_should_read_all_logs(self):
         task_log_reader = TaskLogReader()
+        self.ti.state = TaskInstanceState.SUCCESS  # Ensure mocked instance is completed to return stream
         stream = task_log_reader.read_log_stream(ti=self.ti, try_number=None, metadata={})
-        assert [
-            "localhost\n*** Reading local file: "
-            f"{self.log_dir}/dag_log_reader/task_log_reader/2017-09-01T00.00.00+00.00/1.log\n"
-            "try_number=1.\n"
+        assert list(stream) == [
+            "localhost\n INFO - ::group::Log message source details\n*** Found local files:\n"
+            f"***   * {self.log_dir}/dag_log_reader/task_log_reader/2017-09-01T00.00.00+00.00/1.log\n"
+            " INFO - ::endgroup::\ntry_number=1."
             "\n",
-            "localhost\n*** Reading local file: "
-            f"{self.log_dir}/dag_log_reader/task_log_reader/2017-09-01T00.00.00+00.00/2.log\n"
-            "try_number=2.\n"
+            "localhost\n INFO - ::group::Log message source details\n*** Found local files:\n"
+            f"***   * {self.log_dir}/dag_log_reader/task_log_reader/2017-09-01T00.00.00+00.00/2.log\n"
+            " INFO - ::endgroup::\ntry_number=2."
             "\n",
-            "localhost\n*** Reading local file: "
-            f"{self.log_dir}/dag_log_reader/task_log_reader/2017-09-01T00.00.00+00.00/3.log\n"
-            "try_number=3.\n"
+            "localhost\n INFO - ::group::Log message source details\n*** Found local files:\n"
+            f"***   * {self.log_dir}/dag_log_reader/task_log_reader/2017-09-01T00.00.00+00.00/3.log\n"
+            " INFO - ::endgroup::\ntry_number=3."
             "\n",
-        ] == list(stream)
+        ]
 
     @mock.patch("airflow.utils.log.file_task_handler.FileTaskHandler.read")
     def test_read_log_stream_should_support_multiple_chunks(self, mock_read):
-        first_return = ([[('', "1st line")]], [{}])
-        second_return = ([[('', "2nd line")]], [{"end_of_log": False}])
-        third_return = ([[('', "3rd line")]], [{"end_of_log": True}])
-        fourth_return = ([[('', "should never be read")]], [{"end_of_log": True}])
+        first_return = ([[("", "1st line")]], [{}])
+        second_return = ([[("", "2nd line")]], [{"end_of_log": False}])
+        third_return = ([[("", "3rd line")]], [{"end_of_log": True}])
+        fourth_return = ([[("", "should never be read")]], [{"end_of_log": True}])
         mock_read.side_effect = [first_return, second_return, third_return, fourth_return]
 
         task_log_reader = TaskLogReader()
+        self.ti.state = TaskInstanceState.SUCCESS
         log_stream = task_log_reader.read_log_stream(ti=self.ti, try_number=1, metadata={})
         assert ["\n1st line\n", "\n2nd line\n", "\n3rd line\n"] == list(log_stream)
 
@@ -206,15 +207,15 @@ class TestLogView:
 
     @mock.patch("airflow.utils.log.file_task_handler.FileTaskHandler.read")
     def test_read_log_stream_should_read_each_try_in_turn(self, mock_read):
-        first_return = ([[('', "try_number=1.")]], [{"end_of_log": True}])
-        second_return = ([[('', "try_number=2.")]], [{"end_of_log": True}])
-        third_return = ([[('', "try_number=3.")]], [{"end_of_log": True}])
-        fourth_return = ([[('', "should never be read")]], [{"end_of_log": True}])
+        first_return = ([[("", "try_number=1.")]], [{"end_of_log": True}])
+        second_return = ([[("", "try_number=2.")]], [{"end_of_log": True}])
+        third_return = ([[("", "try_number=3.")]], [{"end_of_log": True}])
+        fourth_return = ([[("", "should never be read")]], [{"end_of_log": True}])
         mock_read.side_effect = [first_return, second_return, third_return, fourth_return]
 
         task_log_reader = TaskLogReader()
         log_stream = task_log_reader.read_log_stream(ti=self.ti, try_number=None, metadata={})
-        assert ['\ntry_number=1.\n', '\ntry_number=2.\n', '\ntry_number=3.\n'] == list(log_stream)
+        assert ["\ntry_number=1.\n", "\ntry_number=2.\n", "\ntry_number=3.\n"] == list(log_stream)
 
         mock_read.assert_has_calls(
             [
@@ -261,7 +262,7 @@ class TestLogView:
         def echo_run_type(dag_run: DagRun, **kwargs):
             print(dag_run.run_type)
 
-        with dag_maker(dag_id, start_date=self.DEFAULT_DATE, schedule_interval="@daily") as dag:
+        with dag_maker(dag_id, start_date=self.DEFAULT_DATE, schedule="@daily") as dag:
             PythonOperator(task_id=task_id, python_callable=echo_run_type)
 
         start = pendulum.datetime(2021, 1, 1)
@@ -269,15 +270,15 @@ class TestLogView:
         trigger_time = end + datetime.timedelta(hours=4, minutes=29)  # Arbitrary.
 
         # Create two DAG runs that have the same data interval, but not the same
-        # execution date, to check if they correctly use different log files.
+        # logical date, to check if they correctly use different log files.
         scheduled_dagrun: DagRun = dag_maker.create_dagrun(
             run_type=DagRunType.SCHEDULED,
-            execution_date=start,
+            logical_date=start,
             data_interval=DataInterval(start, end),
         )
         manual_dagrun: DagRun = dag_maker.create_dagrun(
             run_type=DagRunType.MANUAL,
-            execution_date=trigger_time,
+            logical_date=trigger_time,
             data_interval=DataInterval(start, end),
         )
 

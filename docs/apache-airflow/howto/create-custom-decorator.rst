@@ -31,6 +31,10 @@ tasks. The steps to create and register ``@task.foo`` are:
     ``airflow.decorators.base.DecoratedOperator``, Airflow will supply much of the needed functionality required
     to treat your new class as a taskflow native class.
 
+    You should also override the ``custom_operator_name`` attribute to provide a custom name for the task. For
+    example, ``_DockerDecoratedOperator`` in the ``apache-airflow-providers-docker`` provider sets this to
+    ``@task.docker`` to indicate the decorator name it implements.
+
 2. Create a ``foo_task`` function
 
     Once you have your decorated class, create a function like this, to convert
@@ -46,8 +50,8 @@ tasks. The steps to create and register ``@task.foo`` are:
 
 
         def foo_task(
-            python_callable: Optional[Callable] = None,
-            multiple_outputs: Optional[bool] = None,
+            python_callable: Callable | None = None,
+            multiple_outputs: bool | None = None,
             **kwargs,
         ) -> "TaskDecorator":
             return task_decorator_factory(
@@ -59,7 +63,8 @@ tasks. The steps to create and register ``@task.foo`` are:
 
 3. Register your new decorator in get_provider_info of your provider
 
-    Finally, add a key-value ``task-decorators`` to the dict returned from the provider entrypoint. This should be
+    Finally, add a key-value ``task-decorators`` to the dict returned from the provider entrypoint as described
+    in :doc:`apache-airflow-providers:howto/create-custom-providers`. This should be
     a list with each item containing ``name`` and ``class-name`` keys. When Airflow starts, the
     ``ProviderManager`` class will automatically import this value and ``task.foo`` will work as a new decorator!
 
@@ -73,7 +78,7 @@ tasks. The steps to create and register ``@task.foo`` are:
                     {
                         "name": "foo",
                         # "Import path" and function name of the `foo_task`
-                        "class-name": ["name.of.python.package.foo_task"],
+                        "class-name": "name.of.python.package.foo_task",
                     }
                 ],
                 # ...

@@ -15,20 +15,20 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
-from datetime import timedelta
+import datetime
 
-from airflow import DAG
-from airflow.operators.dummy import DummyOperator
-from airflow.utils.dates import days_ago
+from airflow.models.dag import DAG
+from airflow.operators.empty import EmptyOperator
 
 with DAG(
     dag_id="test_missing_owner",
-    schedule_interval="0 0 * * *",
-    start_date=days_ago(2),
-    dagrun_timeout=timedelta(minutes=60),
+    schedule="0 0 * * *",
+    start_date=datetime.datetime(2022, 1, 1),
+    dagrun_timeout=datetime.timedelta(minutes=60),
     tags=["example"],
 ) as dag:
-    run_this_last = DummyOperator(
+    run_this_last = EmptyOperator(
         task_id="test_task",
     )

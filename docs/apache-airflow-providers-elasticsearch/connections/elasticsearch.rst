@@ -55,7 +55,7 @@ Scheme
     Specify the schema for the Elasticsearch API. `http` by default
 
 Extra (Optional)
-    Specify the extra parameters (as json dictionary) that can be used in Azure connection.
+    Specify the extra parameters (as json dictionary) that can be used in Elasticsearch connection.
     The following parameters are all optional:
 
     * ``http_compress``: specify whether or not to use ``http_compress``. False by default.
@@ -71,3 +71,9 @@ For example:
 .. code-block:: bash
 
     export AIRFLOW_CONN_ELASTICSEARCH_DEFAULT='elasticsearch://elasticsearchlogin:elasticsearchpassword@elastic.co:80/http'
+
+.. exampleinclude:: /../../providers/tests/system/elasticsearch/example_elasticsearch_query.py
+    :language: python
+    :dedent: 4
+    :start-after: [START howto_elasticsearch_query]
+    :end-before: [END howto_elasticsearch_query]

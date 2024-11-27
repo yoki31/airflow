@@ -20,16 +20,18 @@ Managing Connections
 
 .. seealso::
 
-  For an overview of hooks and connections, see :doc:`/concepts/connections`.
+  For an overview of hooks and connections, see :doc:`/authoring-and-scheduling/connections`.
 
 Airflow's :class:`~airflow.models.connection.Connection` object is used for storing credentials and other information necessary for connecting to external services.
 
 Connections may be defined in the following ways:
 
-  - in :ref:`environment variables <environment_variables_secrets_backend>`
+  - in :ref:`environment variables <environment_variables_connections>`
   - in an external :doc:`/security/secrets/secrets-backend/index`
   - in the :ref:`Airflow metadata database <connections-in-database>`
     (using the :ref:`CLI <connection/cli>` or :ref:`web UI <creating_connection_ui>`)
+
+.. _environment_variables_connections:
 
 Storing connections in environment variables
 --------------------------------------------
@@ -64,6 +66,43 @@ If serializing with JSON:
         }
     }'
 
+Generating a JSON connection representation
+"""""""""""""""""""""""""""""""""""""""""""
+
+.. versionadded:: 2.8.0
+
+
+To make connection JSON generation easier, the :py:class:`~airflow.models.connection.Connection` class has a
+convenience property :py:meth:`~airflow.models.connection.Connection.as_json`. It can be used like so:
+
+.. code-block:: pycon
+
+    >>> from airflow.models.connection import Connection
+    >>> c = Connection(
+    ...     conn_id="some_conn",
+    ...     conn_type="mysql",
+    ...     description="connection description",
+    ...     host="myhost.com",
+    ...     login="myname",
+    ...     password="mypassword",
+    ...     extra={"this_param": "some val", "that_param": "other val*"},
+    ... )
+    >>> print(f"AIRFLOW_CONN_{c.conn_id.upper()}='{c.as_json()}'")
+    AIRFLOW_CONN_SOME_CONN='{"conn_type": "mysql", "description": "connection description", "host": "myhost.com", "login": "myname", "password": "mypassword", "extra": {"this_param": "some val", "that_param": "other val*"}}'
+
+In addition, same approach could be used to convert Connection from URI format to JSON format
+
+.. code-block:: pycon
+
+    >>> from airflow.models.connection import Connection
+    >>> c = Connection(
+    ...     conn_id="awesome_conn",
+    ...     description="Example Connection",
+    ...     uri="aws://AKIAIOSFODNN7EXAMPLE:wJalrXUtnFEMI%2FK7MDENG%2FbPxRfiCYEXAMPLEKEY@/?__extra__=%7B%22region_name%22%3A+%22eu-central-1%22%2C+%22config_kwargs%22%3A+%7B%22retries%22%3A+%7B%22mode%22%3A+%22standard%22%2C+%22max_attempts%22%3A+10%7D%7D%7D",
+    ... )
+    >>> print(f"AIRFLOW_CONN_{c.conn_id.upper()}='{c.as_json()}'")
+    AIRFLOW_CONN_AWESOME_CONN='{"conn_type": "aws", "description": "Example Connection", "host": "", "login": "AKIAIOSFODNN7EXAMPLE", "password": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "schema": "", "extra": {"region_name": "eu-central-1", "config_kwargs": {"retries": {"mode": "standard", "max_attempts": 10}}}}'
+
 
 URI format example
 ^^^^^^^^^^^^^^^^^^
@@ -92,7 +131,7 @@ Storing connections in the database
 -----------------------------------
 .. seealso::
 
-    Connections can alternatively be stored in :ref:`environment variables <environment_variables_secrets_backend>` or an :doc:`external secrets backend </security/secrets/secrets-backend/index>` such as HashiCorp Vault, AWS SSM Parameter Store, etc.
+    Connections can alternatively be stored in :ref:`environment variables <environment_variables_connections>` or an :doc:`external secrets backend </security/secrets/secrets-backend/index>` such as HashiCorp Vault, AWS SSM Parameter Store, etc.
 
 When storing connections in the database, you may manage them using either the web UI or the Airflow CLI.
 
@@ -179,7 +218,6 @@ Exporting connections to file
 
 You can export to file connections stored in the database (e.g. for migrating connections from one environment to another).  See :ref:`Exporting Connections <cli-export-connections>` for usage.
 
-.. _environment_variables_secrets_backend:
 
 Security of connections in the database
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -189,20 +227,49 @@ Passwords cannot be manipulated or read without the key. For information on conf
 
 Testing Connections
 ^^^^^^^^^^^^^^^^^^^
+For security reasons, the test connection functionality is disabled by default across Airflow UI, API and CLI.
 
-Airflow Web UI & API allows to test connections. The test connection feature can be used from
-:ref:`create <creating_connection_ui>` or :ref:`edit <editing_connection_ui>` connection page, or through calling
-:doc:`Connections REST API </stable-rest-api-ref/>`.
+For more information on capabilities of users, see the documentation:
+https://airflow.apache.org/docs/apache-airflow/stable/security/security_model.html#capabilities-of-authenticated-ui-users.
+It is strongly advised to not enable the feature until you make sure that only
+highly trusted UI/API users have "edit connection" permissions.
 
-To test a connection Airflow calls out the ``test_connection`` method from the associated hook class and reports the
-results of it. It may happen that the connection type does not have any associated hook or the hook doesn't have the
-``test_connection`` method implementation, in either case the error message will throw the proper error message.
+The availability of the
+functionality can be controlled by the test_connection flag in
+the core section of the Airflow configuration (airflow.cfg).
+It can also be controlled by the environment variable
+``AIRFLOW__CORE__TEST_CONNECTION``.
 
-One important point to note is that the connections will be tested from the webserver only, so this feature is
-subject to network egress rules setup for your webserver. Also, if webserver & worker machines have different libs or
-provider packages installed then the test results might differ.
+The following values are accepted for this config param:
 
-Last caveat is that this feature won't be available for the connections coming out of the secrets backends.
+* Disabled: Disables the test connection functionality and disables the Test Connection button in the UI. This is also the default value set in the Airflow configuration.
+* Enabled: Enables the test connection functionality and activates the Test Connection button in the UI.
+* Hidden: Disables the test connection functionality and hides the Test Connection button in UI.
+
+After enabling Test Connection, it can be used from the
+:ref:`create <creating_connection_ui>` or :ref:`edit <editing_connection_ui>` connection page in the UI, through calling
+:doc:`Connections REST API </stable-rest-api-ref/>`, or running the ``airflow connections test`` :ref:`CLI command <cli>`.
+
+.. warning::
+
+    This feature won't be available for the connections residing in external secrets backends when using the
+    Airflow UI or REST API.
+
+To test a connection, Airflow calls the ``test_connection`` method from the associated hook class and reports the
+results. It may happen that the connection type does not have any associated hook or the hook doesn't have the
+``test_connection`` method implementation, in either case an error message will be displayed or functionality
+will be disabled (if you are testing in the UI).
+
+.. note::
+
+    When testing in the Airflow UI, the test executes from the webserver so this feature is subject to network
+    egress rules setup for your webserver.
+
+.. note::
+
+    If webserver & worker machines (if testing via the Airflow UI) or machines/pods (if testing via the
+    Airflow CLI) have different libs or provider packages installed, test results *might* differ.
+
 
 Custom connection types
 ^^^^^^^^^^^^^^^^^^^^^^^
@@ -214,7 +281,7 @@ for description on how to add custom providers.
 
 The custom connection types are defined via Hooks delivered by the providers. The Hooks can implement
 methods defined in the protocol class :class:`~airflow.hooks.base_hook.DiscoverableHook`. Note that your
-custom Hook should not derive from this class, this class is a dummy example to document expectations
+custom Hook should not derive from this class, this class is an example to document expectations
 regarding about class fields and methods that your Hook might define. Another good example is
 :py:class:`~airflow.providers.jdbc.hooks.jdbc.JdbcHook`.
 
@@ -229,11 +296,69 @@ deprecated ``hook-class-names``) in the provider meta-data, you can customize Ai
 
 You can read more about details how to add custom provider packages in the :doc:`apache-airflow-providers:index`
 
+Custom connection fields
+------------------------
+
+It is possible to add custom form fields in the connection add / edit views in the Airflow webserver.
+Custom fields are stored in the ``Connection.extra`` field as JSON.  To add a custom field, implement
+method :meth:`~BaseHook.get_connection_form_widgets`.  This method should return a dictionary. The keys
+should be the string name of the field as it should be stored in the ``extra`` dict.  The values should
+be inheritors of :class:`wtforms.fields.core.Field`.
+
+Here's an example:
+
+.. code-block:: python
+
+    @staticmethod
+    def get_connection_form_widgets() -> dict[str, Any]:
+        """Returns connection widgets to add to connection form"""
+        from flask_appbuilder.fieldwidgets import BS3TextFieldWidget
+        from flask_babel import lazy_gettext
+        from wtforms import StringField
+
+        return {
+            "workspace": StringField(lazy_gettext("Workspace"), widget=BS3TextFieldWidget()),
+            "project": StringField(lazy_gettext("Project"), widget=BS3TextFieldWidget()),
+        }
+
+.. note:: Custom fields no longer need the ``extra__<conn type>__`` prefix
+
+    Prior to Airflow 2.3, if you wanted a custom field in the UI, you had to prefix it with ``extra__<conn type>__``,
+    and this is how its value would be stored in the ``extra`` dict.  From 2.3 onward, you no longer need to do this.
+
+Method :meth:`~BaseHook.get_ui_field_behaviour` lets you customize behavior of both .  For example you can
+hide or relabel a field (e.g. if it's unused or re-purposed) and you can add placeholder text.
+
+An example:
+
+.. code-block:: python
+
+    @staticmethod
+    def get_ui_field_behaviour() -> dict[str, Any]:
+        """Returns custom field behaviour"""
+        return {
+            "hidden_fields": ["port", "host", "login", "schema"],
+            "relabeling": {},
+            "placeholders": {
+                "password": "Asana personal access token",
+                "workspace": "My workspace gid",
+                "project": "My project gid",
+            },
+        }
+
+.. note::
+
+    If you want to add a form placeholder for an ``extra`` field whose name conflicts with a standard connection attribute (i.e. login, password, host, scheme, port, extra) then
+    you must prefix it with ``extra__<conn type>__``.  E.g. ``extra__myservice__password``.
+
+Take a look at providers for examples of what you can do, for example :py:class:`~airflow.providers.jdbc.hooks.jdbc.JdbcHook`
+and :py:class:`~airflow.providers.asana.hooks.jdbc.AsanaHook` both make use of this feature.
+
 .. note:: Deprecated ``hook-class-names``
 
    Prior to Airflow 2.2.0, the connections in providers have been exposed via ``hook-class-names`` array
-   in provider's meta-data, this however has proven to be not well optimized for using individual hooks
-   in workers and the ``hook-class-names`` array is now replaced by ``connection-types`` array. Until
+   in provider's meta-data. However, this has proven to be inefficient when using individual hooks
+   in workers, and the ``hook-class-names`` array is now replaced by the ``connection-types`` array. Until
    provider supports Airflow below 2.2.0, both ``connection-types`` and ``hook-class-names`` should be
    present. Automated checks during CI build will verify consistency of those two arrays.
 
@@ -356,9 +481,7 @@ You can verify a URI is parsed correctly like so:
 
     >>> from airflow.models.connection import Connection
 
-    >>> c = Connection(
-    ...     uri="my-conn-type://my-login:my-password@my-host:5432/my-schema?param1=val1&param2=val2"
-    ... )
+    >>> c = Connection(uri="my-conn-type://my-login:my-password@my-host:5432/my-schema?param1=val1&param2=val2")
     >>> print(c.login)
     my-login
     >>> print(c.password)
@@ -380,17 +503,13 @@ For example if your password has a ``/``, this fails:
 
 .. code-block:: pycon
 
-    >>> c = Connection(
-    ...     uri="my-conn-type://my-login:my-pa/ssword@my-host:5432/my-schema?param1=val1&param2=val2"
-    ... )
+    >>> c = Connection(uri="my-conn-type://my-login:my-pa/ssword@my-host:5432/my-schema?param1=val1&param2=val2")
     ValueError: invalid literal for int() with base 10: 'my-pa'
 
 To fix this, you can encode with :func:`~urllib.parse.quote_plus`:
 
 .. code-block:: pycon
 
-    >>> c = Connection(
-    ...     uri="my-conn-type://my-login:my-pa%2Fssword@my-host:5432/my-schema?param1=val1&param2=val2"
-    ... )
+    >>> c = Connection(uri="my-conn-type://my-login:my-pa%2Fssword@my-host:5432/my-schema?param1=val1&param2=val2")
     >>> print(c.password)
     my-pa/ssword

@@ -20,4 +20,19 @@
 . "$( dirname "${BASH_SOURCE[0]}" )/_in_container_script_init.sh"
 export PYTHONPATH=${AIRFLOW_SOURCES}
 
-mypy "${@}"
+ADDITIONAL_MYPY_OPTIONS=()
+
+export MYPY_FORCE_COLOR=true
+export TERM=ansi
+
+if [[ ${SUSPENDED_PROVIDERS_FOLDERS=} != "" ]];
+then
+    for folder in ${SUSPENDED_PROVIDERS_FOLDERS=}
+    do
+        ADDITIONAL_MYPY_OPTIONS+=(
+            "--exclude" "providers/src/airflow/providers/${folder}/*"
+            "--exclude" "providers/tests/${folder}/*"
+        )
+    done
+fi
+mypy "${ADDITIONAL_MYPY_OPTIONS[@]}" "${@}"

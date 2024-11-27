@@ -14,13 +14,25 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
-from airflow.models import DAG
+from datetime import timedelta
+
+import pytest
+
+from airflow.models.dag import DAG
 from airflow.models.dagrun import DagRun
 from airflow.utils.session import create_session
 from airflow.utils.state import DagRunState
 from airflow.utils.types import DagRunType
+
 from tests.models import DEFAULT_DATE
+from tests_common.test_utils.compat import AIRFLOW_V_3_0_PLUS
+
+if AIRFLOW_V_3_0_PLUS:
+    from airflow.utils.types import DagRunTriggeredByType
+
+pytestmark = [pytest.mark.db_test, pytest.mark.skip_if_database_isolation_mode]
 
 
 def test_dagrun_state_enum_escape():
@@ -29,23 +41,30 @@ def test_dagrun_state_enum_escape():
     referenced in DB query
     """
     with create_session() as session:
-        dag = DAG(dag_id='test_dagrun_state_enum_escape', start_date=DEFAULT_DATE)
+        dag = DAG(dag_id="test_dagrun_state_enum_escape", schedule=timedelta(days=1), start_date=DEFAULT_DATE)
+        triggered_by_kwargs = {"triggered_by": DagRunTriggeredByType.TEST} if AIRFLOW_V_3_0_PLUS else {}
         dag.create_dagrun(
             run_type=DagRunType.SCHEDULED,
             state=DagRunState.QUEUED,
-            execution_date=DEFAULT_DATE,
+            logical_date=DEFAULT_DATE,
             start_date=DEFAULT_DATE,
+            data_interval=dag.timetable.infer_manual_data_interval(run_after=DEFAULT_DATE),
             session=session,
+            **triggered_by_kwargs,
         )
 
-        query = session.query(DagRun.dag_id, DagRun.state, DagRun.run_type,).filter(
+        query = session.query(
+            DagRun.dag_id,
+            DagRun.state,
+            DagRun.run_type,
+        ).filter(
             DagRun.dag_id == dag.dag_id,
             # make sure enum value can be used in filter queries
             DagRun.state == DagRunState.QUEUED,
         )
         assert str(query.statement.compile(compile_kwargs={"literal_binds": True})) == (
-            'SELECT dag_run.dag_id, dag_run.state, dag_run.run_type \n'
-            'FROM dag_run \n'
+            "SELECT dag_run.dag_id, dag_run.state, dag_run.run_type \n"
+            "FROM dag_run \n"
             "WHERE dag_run.dag_id = 'test_dagrun_state_enum_escape' AND dag_run.state = 'queued'"
         )
 
@@ -53,6 +72,6 @@ def test_dagrun_state_enum_escape():
         assert len(rows) == 1
         assert rows[0].dag_id == dag.dag_id
         # make sure value in db is stored as `queued`, not `DagRunType.QUEUED`
-        assert rows[0].state == 'queued'
+        assert rows[0].state == "queued"
 
         session.rollback()

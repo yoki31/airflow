@@ -15,7 +15,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-#
+from __future__ import annotations
 
 import logging
 import multiprocessing
@@ -23,10 +23,8 @@ import os
 import signal
 import subprocess
 import time
-import unittest
 from contextlib import suppress
 from subprocess import CalledProcessError
-from tempfile import NamedTemporaryFile
 from time import sleep
 from unittest import mock
 
@@ -35,10 +33,17 @@ import pytest
 
 from airflow.exceptions import AirflowException
 from airflow.utils import process_utils
-from airflow.utils.process_utils import check_if_pidfile_process_is_running, execute_in_subprocess
+from airflow.utils.process_utils import (
+    check_if_pidfile_process_is_running,
+    execute_in_subprocess,
+    execute_in_subprocess_with_kwargs,
+    set_new_process_group,
+)
+
+pytestmark = pytest.mark.skip_if_database_isolation_mode
 
 
-class TestReapProcessGroup(unittest.TestCase):
+class TestReapProcessGroup:
     @staticmethod
     def _ignores_sigterm(child_pid, child_setup_done):
         def signal_handler(unused_signum, unused_frame):
@@ -74,8 +79,8 @@ class TestReapProcessGroup(unittest.TestCase):
         it gets killed anyway.
         """
         parent_setup_done = multiprocessing.Semaphore(0)
-        parent_pid = multiprocessing.Value('i', 0)
-        child_pid = multiprocessing.Value('i', 0)
+        parent_pid = multiprocessing.Value("i", 0)
+        child_pid = multiprocessing.Value("i", 0)
         args = [parent_pid, child_pid, parent_setup_done]
         parent = multiprocessing.Process(target=TestReapProcessGroup._parent_of_ignores_sigterm, args=args)
         try:
@@ -96,26 +101,36 @@ class TestReapProcessGroup(unittest.TestCase):
                 pass
 
 
+@pytest.mark.skip_if_database_isolation_mode
+@pytest.mark.db_test
 class TestExecuteInSubProcess:
     def test_should_print_all_messages1(self, caplog):
         execute_in_subprocess(["bash", "-c", "echo CAT; echo KITTY;"])
         msgs = [record.getMessage() for record in caplog.records]
-        assert ["Executing cmd: bash -c 'echo CAT; echo KITTY;'", 'Output:', 'CAT', 'KITTY'] == msgs
+        assert ["Executing cmd: bash -c 'echo CAT; echo KITTY;'", "Output:", "CAT", "KITTY"] == msgs
 
     def test_should_print_all_messages_from_cwd(self, caplog, tmp_path):
         execute_in_subprocess(["bash", "-c", "echo CAT; pwd; echo KITTY;"], cwd=str(tmp_path))
         msgs = [record.getMessage() for record in caplog.records]
         assert [
             "Executing cmd: bash -c 'echo CAT; pwd; echo KITTY;'",
-            'Output:',
-            'CAT',
+            "Output:",
+            "CAT",
             str(tmp_path),
-            'KITTY',
+            "KITTY",
         ] == msgs
+
+    def test_using_env_works(self, caplog):
+        execute_in_subprocess(["bash", "-c", 'echo "My value is ${VALUE}"'], env=dict(VALUE="1"))
+        assert "My value is 1" in caplog.text
 
     def test_should_raise_exception(self):
         with pytest.raises(CalledProcessError):
             process_utils.execute_in_subprocess(["bash", "-c", "exit 1"])
+
+    def test_using_env_as_kwarg_works(self, caplog):
+        execute_in_subprocess_with_kwargs(["bash", "-c", 'echo "My value is ${VALUE}"'], env=dict(VALUE="1"))
+        assert "My value is 1" in caplog.text
 
 
 def my_sleep_subprocess():
@@ -128,7 +143,9 @@ def my_sleep_subprocess_with_signals():
     sleep(100)
 
 
-class TestKillChildProcessesByPids(unittest.TestCase):
+@pytest.mark.skip_if_database_isolation_mode
+@pytest.mark.db_test
+class TestKillChildProcessesByPids:
     def test_should_kill_process(self):
         before_num_process = subprocess.check_output(["ps", "-ax", "-o", "pid="]).decode().count("\n")
 
@@ -144,24 +161,24 @@ class TestKillChildProcessesByPids(unittest.TestCase):
         num_process = subprocess.check_output(["ps", "-ax", "-o", "pid="]).decode().count("\n")
         assert before_num_process == num_process
 
-    def test_should_force_kill_process(self):
-
+    def test_should_force_kill_process(self, caplog):
         process = multiprocessing.Process(target=my_sleep_subprocess_with_signals, args=())
         process.start()
         sleep(0)
 
         all_processes = subprocess.check_output(["ps", "-ax", "-o", "pid="]).decode().splitlines()
-        assert str(process.pid) in map(lambda x: x.strip(), all_processes)
+        assert str(process.pid) in (x.strip() for x in all_processes)
 
-        with self.assertLogs(process_utils.log) as cm:
+        with caplog.at_level(logging.INFO, logger=process_utils.log.name):
+            caplog.clear()
             process_utils.kill_child_processes_by_pids([process.pid], timeout=0)
-        assert any("Killing child PID" in line for line in cm.output)
+            assert f"Killing child PID: {process.pid}" in caplog.messages
         sleep(0)
         all_processes = subprocess.check_output(["ps", "-ax", "-o", "pid="]).decode().splitlines()
-        assert str(process.pid) not in map(lambda x: x.strip(), all_processes)
+        assert str(process.pid) not in (x.strip() for x in all_processes)
 
 
-class TestPatchEnviron(unittest.TestCase):
+class TestPatchEnviron:
     def test_should_update_variable_and_restore_state_when_exit(self):
         with mock.patch.dict("os.environ", {"TEST_NOT_EXISTS": "BEFORE", "TEST_EXISTS": "BEFORE"}):
             del os.environ["TEST_NOT_EXISTS"]
@@ -193,22 +210,39 @@ class TestPatchEnviron(unittest.TestCase):
             assert "TEST_NOT_EXISTS" not in os.environ
 
 
-class TestCheckIfPidfileProcessIsRunning(unittest.TestCase):
+class TestCheckIfPidfileProcessIsRunning:
     def test_ok_if_no_file(self):
-        check_if_pidfile_process_is_running('some/pid/file', process_name="test")
+        check_if_pidfile_process_is_running("some/pid/file", process_name="test")
 
-    def test_remove_if_no_process(self):
+    def test_remove_if_no_process(self, tmp_path):
+        path = tmp_path / "testfile"
+        # limit pid as max of int32, otherwise this test could fail on some platform
+        path.write_text(f"{2**31 - 1}")
+        check_if_pidfile_process_is_running(os.fspath(path), process_name="test")
         # Assert file is deleted
-        with pytest.raises(FileNotFoundError):
-            with NamedTemporaryFile('+w') as f:
-                f.write('19191919191919191991')
-                f.flush()
-                check_if_pidfile_process_is_running(f.name, process_name="test")
+        assert not path.exists()
 
-    def test_raise_error_if_process_is_running(self):
+    def test_raise_error_if_process_is_running(self, tmp_path):
+        path = tmp_path / "testfile"
         pid = os.getpid()
-        with NamedTemporaryFile('+w') as f:
-            f.write(str(pid))
-            f.flush()
-            with pytest.raises(AirflowException, match="is already running under PID"):
-                check_if_pidfile_process_is_running(f.name, process_name="test")
+        path.write_text(f"{pid}")
+        with pytest.raises(AirflowException, match="is already running under PID"):
+            check_if_pidfile_process_is_running(os.fspath(path), process_name="test")
+
+
+class TestSetNewProcessGroup:
+    @mock.patch("os.setpgid")
+    def test_not_session_leader(self, mock_set_pid):
+        pid = os.getpid()
+        with mock.patch("os.getsid", autospec=True) as mock_get_sid:
+            mock_get_sid.return_value = pid + 1
+            set_new_process_group()
+            assert mock_set_pid.call_count == 1
+
+    @mock.patch("os.setpgid")
+    def test_session_leader(self, mock_set_pid):
+        pid = os.getpid()
+        with mock.patch("os.getsid", autospec=True) as mock_get_sid:
+            mock_get_sid.return_value = pid
+            set_new_process_group()
+            assert mock_set_pid.call_count == 0

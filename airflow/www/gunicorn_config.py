@@ -16,6 +16,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
 import setproctitle
 
@@ -35,5 +36,8 @@ def post_worker_init(_):
 def on_starting(server):
     from airflow.providers_manager import ProvidersManager
 
+    providers_manager = ProvidersManager()
+    # Load providers configuration before forking workers
+    providers_manager.initialize_providers_configuration()
     # Load providers before forking workers
-    ProvidersManager().connection_form_widgets
+    providers_manager.connection_form_widgets

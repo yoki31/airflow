@@ -19,27 +19,46 @@
 ``apache-airflow-providers-yandex``
 ===================================
 
-Content
--------
 
 .. toctree::
+    :hidden:
+    :maxdepth: 1
+    :caption: Basics
+
+    Home <self>
+    Changelog <changelog>
+    Security <security>
+
+.. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Guides
 
+    Configuration <configurations-ref>
     Connection types <connections/yandexcloud>
-    Operators <operators>
+    Lockbox Secret Backend <secrets-backends/yandex-cloud-lockbox-secret-backend>
+    Operators <operators/index>
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: References
 
     Python API <_api/airflow/providers/yandex/index>
 
 .. toctree::
+    :hidden:
+    :maxdepth: 1
+    :caption: System tests
+
+    System Tests <_api/tests/system/yandex/index>
+
+.. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Resources
 
-    Example DAGs <https://github.com/apache/airflow/tree/main/airflow/providers/yandex/example_dags>
+    Example DAGs <https://github.com/apache/airflow/tree/providers-yandex/|version|/tests/system/providers/yandex/example_yandexcloud_dataproc.py>
     PyPI Repository <https://pypi.org/project/apache-airflow-providers-yandex/>
     Installing from sources <installing-providers-from-sources>
 
@@ -47,40 +66,45 @@ Content
 
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Commits
 
     Detailed list of commits <commits>
 
 
-Package apache-airflow-providers-yandex
+apache-airflow-providers-yandex package
 ------------------------------------------------------
 
-Yandex including `Yandex.Cloud <https://cloud.yandex.com/>`__
+This package is for Yandex, including:
+
+    - `Yandex.Cloud <https://cloud.yandex.com/>`__
 
 
-Release: 2.2.2
+Release: 3.12.0
 
 Provider package
 ----------------
 
-This is a provider package for ``yandex`` provider. All classes for this provider package
-are in ``airflow.providers.yandex`` python package.
+This package is for the ``yandex`` provider.
+All classes for this package are included in the ``airflow.providers.yandex`` python package.
 
 Installation
 ------------
 
-You can install this package on top of an existing Airflow 2.1+ installation via
-``pip install apache-airflow-providers-yandex``
+You can install this package on top of an existing Airflow 2 installation via
+``pip install apache-airflow-providers-yandex``.
+For the minimum Airflow version supported, see ``Requirements`` below.
 
-PIP requirements
-----------------
+Requirements
+------------
 
-==================  ==================
-PIP package         Version required
-==================  ==================
-``apache-airflow``  ``>=2.1.0``
-``yandexcloud``     ``>=0.146.0``
-==================  ==================
+The minimum Apache Airflow version supported by this provider package is ``2.8.0``.
 
-.. include:: ../../airflow/providers/yandex/CHANGELOG.rst
+=======================  ==================
+PIP package              Version required
+=======================  ==================
+``apache-airflow``       ``>=2.8.0``
+``yandexcloud``          ``>=0.308.0``
+``yandex-query-client``  ``>=0.1.4``
+=======================  ==================

@@ -14,36 +14,40 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
+
 from datetime import timedelta
 
 import pytest
-from parameterized import parameterized
 
 from airflow.api_connexion.exceptions import EXCEPTIONS_LINK_MAP
-from airflow.models.errors import ImportError
-from airflow.security import permissions
 from airflow.utils import timezone
 from airflow.utils.session import provide_session
-from tests.test_utils.api_connexion_utils import assert_401, create_user, delete_user
-from tests.test_utils.config import conf_vars
-from tests.test_utils.db import clear_db_import_errors
+
+from tests_common.test_utils.api_connexion_utils import assert_401, create_user, delete_user
+from tests_common.test_utils.compat import ParseImportError
+from tests_common.test_utils.config import conf_vars
+from tests_common.test_utils.db import clear_db_dags, clear_db_import_errors
+
+pytestmark = [pytest.mark.db_test, pytest.mark.skip_if_database_isolation_mode]
+
+TEST_DAG_IDS = ["test_dag", "test_dag2"]
 
 
 @pytest.fixture(scope="module")
 def configured_app(minimal_app_for_api):
     app = minimal_app_for_api
     create_user(
-        app,  # type:ignore
+        app,
         username="test",
-        role_name="Test",
-        permissions=[(permissions.ACTION_CAN_READ, permissions.RESOURCE_IMPORT_ERROR)],  # type: ignore
+        role_name="admin",
     )
-    create_user(app, username="test_no_permissions", role_name="TestNoPermissions")  # type: ignore
+    create_user(app, username="test_no_permissions", role_name=None)
 
-    yield minimal_app_for_api
+    yield app
 
-    delete_user(app, username="test")  # type: ignore
-    delete_user(app, username="test_no_permissions")  # type: ignore
+    delete_user(app, username="test")
+    delete_user(app, username="test_no_permissions")
 
 
 class TestBaseImportError:
@@ -55,9 +59,11 @@ class TestBaseImportError:
         self.client = self.app.test_client()  # type:ignore
 
         clear_db_import_errors()
+        clear_db_dags()
 
     def teardown_method(self) -> None:
         clear_db_import_errors()
+        clear_db_dags()
 
     @staticmethod
     def _normalize_import_errors(import_errors):
@@ -67,7 +73,7 @@ class TestBaseImportError:
 
 class TestGetImportErrorEndpoint(TestBaseImportError):
     def test_response_200(self, session):
-        import_error = ImportError(
+        import_error = ParseImportError(
             filename="Lorem_ipsum.py",
             stacktrace="Lorem ipsum",
             timestamp=timezone.parse(self.timestamp, timezone="UTC"),
@@ -76,7 +82,7 @@ class TestGetImportErrorEndpoint(TestBaseImportError):
         session.commit()
 
         response = self.client.get(
-            f"/api/v1/importErrors/{import_error.id}", environ_overrides={'REMOTE_USER': "test"}
+            f"/api/v1/importErrors/{import_error.id}", environ_overrides={"REMOTE_USER": "test"}
         )
 
         assert response.status_code == 200
@@ -90,7 +96,7 @@ class TestGetImportErrorEndpoint(TestBaseImportError):
         } == response_data
 
     def test_response_404(self):
-        response = self.client.get("/api/v1/importErrors/2", environ_overrides={'REMOTE_USER': "test"})
+        response = self.client.get("/api/v1/importErrors/2", environ_overrides={"REMOTE_USER": "test"})
         assert response.status_code == 404
         assert {
             "detail": "The ImportError with import_error_id: `2` was not found",
@@ -100,7 +106,7 @@ class TestGetImportErrorEndpoint(TestBaseImportError):
         } == response.json
 
     def test_should_raises_401_unauthenticated(self, session):
-        import_error = ImportError(
+        import_error = ParseImportError(
             filename="Lorem_ipsum.py",
             stacktrace="Lorem ipsum",
             timestamp=timezone.parse(self.timestamp, timezone="UTC"),
@@ -114,7 +120,7 @@ class TestGetImportErrorEndpoint(TestBaseImportError):
 
     def test_should_raise_403_forbidden(self):
         response = self.client.get(
-            "/api/v1/importErrors", environ_overrides={'REMOTE_USER': "test_no_permissions"}
+            "/api/v1/importErrors", environ_overrides={"REMOTE_USER": "test_no_permissions"}
         )
         assert response.status_code == 403
 
@@ -122,7 +128,7 @@ class TestGetImportErrorEndpoint(TestBaseImportError):
 class TestGetImportErrorsEndpoint(TestBaseImportError):
     def test_get_import_errors(self, session):
         import_error = [
-            ImportError(
+            ParseImportError(
                 filename="Lorem_ipsum.py",
                 stacktrace="Lorem ipsum",
                 timestamp=timezone.parse(self.timestamp, timezone="UTC"),
@@ -132,11 +138,11 @@ class TestGetImportErrorsEndpoint(TestBaseImportError):
         session.add_all(import_error)
         session.commit()
 
-        response = self.client.get("/api/v1/importErrors", environ_overrides={'REMOTE_USER': "test"})
+        response = self.client.get("/api/v1/importErrors", environ_overrides={"REMOTE_USER": "test"})
 
         assert response.status_code == 200
         response_data = response.json
-        self._normalize_import_errors(response_data['import_errors'])
+        self._normalize_import_errors(response_data["import_errors"])
         assert {
             "import_errors": [
                 {
@@ -157,7 +163,7 @@ class TestGetImportErrorsEndpoint(TestBaseImportError):
 
     def test_get_import_errors_order_by(self, session):
         import_error = [
-            ImportError(
+            ParseImportError(
                 filename=f"Lorem_ipsum{i}.py",
                 stacktrace="Lorem ipsum",
                 timestamp=timezone.parse(self.timestamp, timezone="UTC") + timedelta(days=-i),
@@ -168,12 +174,12 @@ class TestGetImportErrorsEndpoint(TestBaseImportError):
         session.commit()
 
         response = self.client.get(
-            "/api/v1/importErrors?order_by=-timestamp", environ_overrides={'REMOTE_USER': "test"}
+            "/api/v1/importErrors?order_by=-timestamp", environ_overrides={"REMOTE_USER": "test"}
         )
 
         assert response.status_code == 200
         response_data = response.json
-        self._normalize_import_errors(response_data['import_errors'])
+        self._normalize_import_errors(response_data["import_errors"])
         assert {
             "import_errors": [
                 {
@@ -194,7 +200,7 @@ class TestGetImportErrorsEndpoint(TestBaseImportError):
 
     def test_order_by_raises_400_for_invalid_attr(self, session):
         import_error = [
-            ImportError(
+            ParseImportError(
                 filename="Lorem_ipsum.py",
                 stacktrace="Lorem ipsum",
                 timestamp=timezone.parse(self.timestamp, timezone="UTC"),
@@ -205,16 +211,16 @@ class TestGetImportErrorsEndpoint(TestBaseImportError):
         session.commit()
 
         response = self.client.get(
-            "/api/v1/importErrors?order_by=timest", environ_overrides={'REMOTE_USER': "test"}
+            "/api/v1/importErrors?order_by=timest", environ_overrides={"REMOTE_USER": "test"}
         )
 
         assert response.status_code == 400
         msg = "Ordering with 'timest' is disallowed or the attribute does not exist on the model"
-        assert response.json['detail'] == msg
+        assert response.json["detail"] == msg
 
     def test_should_raises_401_unauthenticated(self, session):
         import_error = [
-            ImportError(
+            ParseImportError(
                 filename="Lorem_ipsum.py",
                 stacktrace="Lorem ipsum",
                 timestamp=timezone.parse(self.timestamp, timezone="UTC"),
@@ -230,7 +236,8 @@ class TestGetImportErrorsEndpoint(TestBaseImportError):
 
 
 class TestGetImportErrorsEndpointPagination(TestBaseImportError):
-    @parameterized.expand(
+    @pytest.mark.parametrize(
+        "url, expected_import_error_ids",
         [
             # Limit test data
             ("/api/v1/importErrors?limit=1", ["/tmp/file_1.py"]),
@@ -240,12 +247,12 @@ class TestGetImportErrorsEndpointPagination(TestBaseImportError):
             ("/api/v1/importErrors?offset=3", [f"/tmp/file_{i}.py" for i in range(4, 104)]),
             # Limit and offset test data
             ("/api/v1/importErrors?offset=3&limit=3", [f"/tmp/file_{i}.py" for i in [4, 5, 6]]),
-        ]
+        ],
     )
     @provide_session
     def test_limit_and_offset(self, url, expected_import_error_ids, session):
         import_errors = [
-            ImportError(
+            ParseImportError(
                 filename=f"/tmp/file_{i}.py",
                 stacktrace="Lorem ipsum",
                 timestamp=timezone.parse(self.timestamp, timezone="UTC"),
@@ -255,7 +262,7 @@ class TestGetImportErrorsEndpointPagination(TestBaseImportError):
         session.add_all(import_errors)
         session.commit()
 
-        response = self.client.get(url, environ_overrides={'REMOTE_USER': "test"})
+        response = self.client.get(url, environ_overrides={"REMOTE_USER": "test"})
 
         assert response.status_code == 200
         import_ids = [pool["filename"] for pool in response.json["import_errors"]]
@@ -263,7 +270,7 @@ class TestGetImportErrorsEndpointPagination(TestBaseImportError):
 
     def test_should_respect_page_size_limit_default(self, session):
         import_errors = [
-            ImportError(
+            ParseImportError(
                 filename=f"/tmp/file_{i}.py",
                 stacktrace="Lorem ipsum",
                 timestamp=timezone.parse(self.timestamp, timezone="UTC"),
@@ -272,14 +279,14 @@ class TestGetImportErrorsEndpointPagination(TestBaseImportError):
         ]
         session.add_all(import_errors)
         session.commit()
-        response = self.client.get("/api/v1/importErrors", environ_overrides={'REMOTE_USER': "test"})
+        response = self.client.get("/api/v1/importErrors", environ_overrides={"REMOTE_USER": "test"})
         assert response.status_code == 200
-        assert len(response.json['import_errors']) == 100
+        assert len(response.json["import_errors"]) == 100
 
     @conf_vars({("api", "maximum_page_limit"): "150"})
     def test_should_return_conf_max_if_req_max_above_conf(self, session):
         import_errors = [
-            ImportError(
+            ParseImportError(
                 filename=f"/tmp/file_{i}.py",
                 stacktrace="Lorem ipsum",
                 timestamp=timezone.parse(self.timestamp, timezone="UTC"),
@@ -289,7 +296,7 @@ class TestGetImportErrorsEndpointPagination(TestBaseImportError):
         session.add_all(import_errors)
         session.commit()
         response = self.client.get(
-            "/api/v1/importErrors?limit=180", environ_overrides={'REMOTE_USER': "test"}
+            "/api/v1/importErrors?limit=180", environ_overrides={"REMOTE_USER": "test"}
         )
         assert response.status_code == 200
-        assert len(response.json['import_errors']) == 150
+        assert len(response.json["import_errors"]) == 150

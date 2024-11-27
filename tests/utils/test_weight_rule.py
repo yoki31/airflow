@@ -15,15 +15,21 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
-import unittest
+from __future__ import annotations
 
 import pytest
 
-from airflow.utils.weight_rule import WeightRule
+from airflow.utils.weight_rule import DB_SAFE_MAXIMUM, DB_SAFE_MINIMUM, WeightRule, db_safe_priority
 
 
-class TestWeightRule(unittest.TestCase):
+def test_db_safe_priority():
+    assert db_safe_priority(1) == 1
+    assert db_safe_priority(-1) == -1
+    assert db_safe_priority(9999999999) == DB_SAFE_MAXIMUM
+    assert db_safe_priority(-9999999999) == DB_SAFE_MINIMUM
+
+
+class TestWeightRule:
     def test_valid_weight_rules(self):
         assert WeightRule.is_valid(WeightRule.DOWNSTREAM)
         assert WeightRule.is_valid(WeightRule.UPSTREAM)

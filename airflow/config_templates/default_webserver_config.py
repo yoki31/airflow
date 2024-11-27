@@ -15,10 +15,13 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""Default configuration for the Airflow webserver"""
+"""Default configuration for the Airflow webserver."""
+
+from __future__ import annotations
+
 import os
 
-from airflow.www.fab_security.manager import AUTH_DB
+from flask_appbuilder.const import AUTH_DB
 
 # from airflow.www.fab_security.manager import AUTH_LDAP
 # from airflow.www.fab_security.manager import AUTH_OAUTH
@@ -30,9 +33,10 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 
 # Flask-WTF flag for CSRF
 WTF_CSRF_ENABLED = True
+WTF_CSRF_TIME_LIMIT = None
 
 # ----------------------------------------------------
-# AUTHENTICATION CONFIG
+# AUTHENTICATION CONFIG (specific to FAB auth manager)
 # ----------------------------------------------------
 # For details on how to set up each of the following authentication, see
 # http://flask-appbuilder.readthedocs.io/en/latest/security.html# authentication-methods
@@ -126,3 +130,23 @@ AUTH_TYPE = AUTH_DB
 # APP_THEME = "superhero.css"
 # APP_THEME = "united.css"
 # APP_THEME = "yeti.css"
+
+# ----------------------------------------------------
+# Simple auth manager config
+# ----------------------------------------------------
+# This list contains the list of users and their associated role in simple auth manager.
+# If the simple auth manager is used in your environment, this list controls who can access the environment.
+# Example:
+# [{
+#     "username": "admin",
+#     "role": "admin",
+# }]
+SIMPLE_AUTH_MANAGER_USERS = [
+    {
+        "username": "admin",
+        "role": "admin",
+    }
+]
+
+# Turn this flag on to disable authentication and allow everyone as admin
+SIMPLE_AUTH_MANAGER_ALL_ADMINS = False

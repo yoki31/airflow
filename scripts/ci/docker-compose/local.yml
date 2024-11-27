@@ -15,46 +15,110 @@
 # specific language governing permissions and limitations
 # under the License.
 ---
-version: "3.7"
 services:
   airflow:
     stdin_open: true  # docker run -i
     tty: true  # docker run -t
+    environment:
+      - AIRFLOW__CORE__PLUGINS_FOLDER=/files/plugins
     # We need to mount files and directories individually because some files
     # such apache_airflow.egg-info should not be mounted from host
     # we only mount those files, so that it makes sense to edit while developing
     # or those that might be useful to see in the host as output of the
     # tests (such as logs)
     volumes:
-      # START automatically generated volumes from LOCAL_MOUNTS in _local_mounts.sh
-      - ../../../.bash_aliases:/root/.bash_aliases:cached
-      - ../../../.bash_history:/root/.bash_history:cached
-      - ../../../.coveragerc:/opt/airflow/.coveragerc:cached
-      - ../../../.dockerignore:/opt/airflow/.dockerignore:cached
-      - ../../../.flake8:/opt/airflow/.flake8:cached
-      - ../../../.github:/opt/airflow/.github:cached
-      - ../../../.inputrc:/root/.inputrc:cached
-      - ../../../.rat-excludes:/opt/airflow/.rat-excludes:cached
-      - ../../../CHANGELOG.txt:/opt/airflow/CHANGELOG.txt:cached
-      - ../../../LICENSE:/opt/airflow/LICENSE:cached
-      - ../../../MANIFEST.in:/opt/airflow/MANIFEST.in:cached
-      - ../../../NOTICE:/opt/airflow/NOTICE:cached
-      - ../../../airflow:/opt/airflow/airflow:cached
-      - ../../../provider_packages:/opt/airflow/provider_packages:cached
-      - ../../../dags:/opt/airflow/dags:cached
-      - ../../../dev:/opt/airflow/dev:cached
-      - ../../../docs:/opt/airflow/docs:cached
-      - ../../../hooks:/opt/airflow/hooks:cached
-      - ../../../logs:/root/airflow/logs:cached
-      - ../../../pyproject.toml:/opt/airflow/pyproject.toml:cached
-      - ../../../pytest.ini:/opt/airflow/pytest.ini:cached
-      - ../../../scripts:/opt/airflow/scripts:cached
-      - ../../../scripts/in_container/entrypoint_ci.sh:/entrypoint:cached
-      - ../../../setup.cfg:/opt/airflow/setup.cfg:cached
-      - ../../../setup.py:/opt/airflow/setup.py:cached
-      - ../../../tests:/opt/airflow/tests:cached
-      - ../../../kubernetes_tests:/opt/airflow/kubernetes_tests:cached
-      - ../../../docker_tests:/opt/airflow/docker_tests:cached
-      - ../../../chart:/opt/airflow/chart:cached
-      - ../../../metastore_browser:/opt/airflow/metastore_browser:cached
-      # END automatically generated volumes from LOCAL_MOUNTS in _local_mounts.sh
+      # START automatically generated volumes from VOLUMES_FOR_SELECTED_MOUNTS in docker_command_utils.py
+      - type: bind
+        source: ../../../.bash_aliases
+        target: /root/.bash_aliases
+      - type: bind
+        source: ../../../.bash_history
+        target: /root/.bash_history
+      - type: bind
+        source: ../../../.build
+        target: /opt/airflow/.build
+      - type: bind
+        source: ../../../.dockerignore
+        target: /opt/airflow/.dockerignore
+      - type: bind
+        source: ../../../.github
+        target: /opt/airflow/.github
+      - type: bind
+        source: ../../../.inputrc
+        target: /root/.inputrc
+      - type: bind
+        source: ../../../.rat-excludes
+        target: /opt/airflow/.rat-excludes
+      - type: bind
+        source: ../../../LICENSE
+        target: /opt/airflow/LICENSE
+      - type: bind
+        source: ../../../NOTICE
+        target: /opt/airflow/NOTICE
+      - type: bind
+        source: ../../../RELEASE_NOTES.rst
+        target: /opt/airflow/RELEASE_NOTES.rst
+      - type: bind
+        source: ../../../airflow
+        target: /opt/airflow/airflow
+      - type: bind
+        source: ../../../constraints
+        target: /opt/airflow/constraints
+      - type: bind
+        source: ../../../clients
+        target: /opt/airflow/clients
+      - type: bind
+        source: ../../../dags
+        target: /opt/airflow/dags
+      - type: bind
+        source: ../../../dev
+        target: /opt/airflow/dev
+      - type: bind
+        source: ../../../docs
+        target: /opt/airflow/docs
+      - type: bind
+        source: ../../../generated
+        target: /opt/airflow/generated
+      - type: bind
+        source: ../../../hooks
+        target: /opt/airflow/hooks
+      - type: bind
+        source: ../../../logs
+        target: /root/airflow/logs
+      - type: bind
+        source: ../../../providers
+        target: /opt/airflow/providers
+      - type: bind
+        source: ../../../task_sdk
+        target: /opt/airflow/task_sdk
+      - type: bind
+        source: ../../../pyproject.toml
+        target: /opt/airflow/pyproject.toml
+      - type: bind
+        source: ../../../scripts
+        target: /opt/airflow/scripts
+      - type: bind
+        source: ../../../scripts/docker/entrypoint_ci.sh
+        target: /entrypoint
+      - type: bind
+        source: ../../../tests_common
+        target: /opt/airflow/tests_common
+      - type: bind
+        source: ../../../tests
+        target: /opt/airflow/tests
+      - type: bind
+        source: ../../../helm_tests
+        target: /opt/airflow/helm_tests
+      - type: bind
+        source: ../../../kubernetes_tests
+        target: /opt/airflow/kubernetes_tests
+      - type: bind
+        source: ../../../docker_tests
+        target: /opt/airflow/docker_tests
+      - type: bind
+        source: ../../../chart
+        target: /opt/airflow/chart
+      - type: bind
+        source: ../../../hatch_build.py
+        target: /opt/airflow/hatch_build.py
+        # END automatically generated volumes from VOLUMES_FOR_SELECTED_MOUNTS in docker_command_utils.py

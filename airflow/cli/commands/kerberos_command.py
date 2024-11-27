@@ -14,34 +14,30 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+"""Kerberos command."""
 
-"""Kerberos command"""
-import daemon
-from daemon.pidfile import TimeoutPIDLockFile
+from __future__ import annotations
 
 from airflow import settings
+from airflow.cli.commands.daemon_utils import run_command_with_daemon_option
 from airflow.security import kerberos as krb
+from airflow.security.kerberos import KerberosMode
 from airflow.utils import cli as cli_utils
-from airflow.utils.cli import setup_locations
+from airflow.utils.providers_configuration_loader import providers_configuration_loaded
 
 
 @cli_utils.action_cli
+@providers_configuration_loaded
 def kerberos(args):
-    """Start a kerberos ticket renewer"""
+    """Start a kerberos ticket renewer."""
     print(settings.HEADER)
 
-    if args.daemon:
-        pid, stdout, stderr, _ = setup_locations(
-            "kerberos", args.pid, args.stdout, args.stderr, args.log_file
-        )
-        with open(stdout, 'w+') as stdout_handle, open(stderr, 'w+') as stderr_handle:
-            ctx = daemon.DaemonContext(
-                pidfile=TimeoutPIDLockFile(pid, -1),
-                stdout=stdout_handle,
-                stderr=stderr_handle,
-            )
+    mode = KerberosMode.STANDARD
+    if args.one_time:
+        mode = KerberosMode.ONE_TIME
 
-            with ctx:
-                krb.run(principal=args.principal, keytab=args.keytab)
-    else:
-        krb.run(principal=args.principal, keytab=args.keytab)
+    run_command_with_daemon_option(
+        args=args,
+        process_name="kerberos",
+        callback=lambda: krb.run(principal=args.principal, keytab=args.keytab, mode=mode),
+    )

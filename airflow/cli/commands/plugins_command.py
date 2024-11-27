@@ -14,13 +14,16 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
+
 import inspect
-from typing import Any, Dict, List, Union
+from typing import Any
 
 from airflow import plugins_manager
 from airflow.cli.simple_table import AirflowConsole
 from airflow.plugins_manager import PluginsDirectorySource, get_plugin_info
 from airflow.utils.cli import suppress_logs_and_warning
+from airflow.utils.providers_configuration_loader import providers_configuration_loaded
 
 
 def _get_name(class_like_object) -> str:
@@ -31,15 +34,16 @@ def _get_name(class_like_object) -> str:
     return class_like_object.__class__.__name__
 
 
-def _join_plugins_names(value: Union[List[Any], Any]) -> str:
+def _join_plugins_names(value: list[Any] | Any) -> str:
     value = value if isinstance(value, list) else [value]
     return ",".join(_get_name(v) for v in value)
 
 
 @suppress_logs_and_warning
+@providers_configuration_loaded
 def dump_plugins(args):
-    """Dump plugins information"""
-    plugins_info: List[Dict[str, str]] = get_plugin_info()
+    """Dump plugins information."""
+    plugins_info: list[dict[str, str]] = get_plugin_info()
     if not plugins_manager.plugins:
         print("No plugins loaded")
         return

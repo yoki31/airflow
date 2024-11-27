@@ -14,8 +14,11 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
-import re
+from typing import TYPE_CHECKING
+
+import re2
 
 from airflow.api_connexion import security
 from airflow.api_connexion.schemas.provider_schema import (
@@ -23,26 +26,31 @@ from airflow.api_connexion.schemas.provider_schema import (
     ProviderCollection,
     provider_collection_schema,
 )
-from airflow.api_connexion.types import APIResponse
-from airflow.providers_manager import ProviderInfo, ProvidersManager
-from airflow.security import permissions
+from airflow.auth.managers.models.resource_details import AccessView
+from airflow.providers_manager import ProvidersManager
+from airflow.utils.api_migration import mark_fastapi_migration_done
+
+if TYPE_CHECKING:
+    from airflow.api_connexion.types import APIResponse
+    from airflow.providers_manager import ProviderInfo
 
 
 def _remove_rst_syntax(value: str) -> str:
-    return re.sub("[`_<>]", "", value.strip(" \n."))
+    return re2.sub("[`_<>]", "", value.strip(" \n."))
 
 
 def _provider_mapper(provider: ProviderInfo) -> Provider:
     return Provider(
-        package_name=provider[1]["package-name"],
-        description=_remove_rst_syntax(provider[1]["description"]),
-        version=provider[0],
+        package_name=provider.data["package-name"],
+        description=_remove_rst_syntax(provider.data["description"]),
+        version=provider.version,
     )
 
 
-@security.requires_access([(permissions.ACTION_CAN_READ, permissions.RESOURCE_PROVIDER)])
+@mark_fastapi_migration_done
+@security.requires_access_view(AccessView.PROVIDERS)
 def get_providers() -> APIResponse:
-    """Get providers"""
+    """Get providers."""
     providers = [_provider_mapper(d) for d in ProvidersManager().providers.values()]
     total_entries = len(providers)
     return provider_collection_schema.dump(

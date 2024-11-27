@@ -14,9 +14,12 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
+
+from airflow.utils.state import TaskInstanceState
 
 if TYPE_CHECKING:
     from airflow.models.taskinstance import SimpleTaskInstance
@@ -28,10 +31,17 @@ class CallbackRequest:
 
     :param full_filepath: File Path to use to run the callback
     :param msg: Additional Message that can be used for logging
+    :param processor_subdir: Directory used by Dag Processor when parsed the dag.
     """
 
-    def __init__(self, full_filepath: str, msg: Optional[str] = None):
+    def __init__(
+        self,
+        full_filepath: str,
+        processor_subdir: str | None = None,
+        msg: str | None = None,
+    ):
         self.full_filepath = full_filepath
+        self.processor_subdir = processor_subdir
         self.msg = msg
 
     def __eq__(self, other):
@@ -53,38 +63,53 @@ class CallbackRequest:
 
 class TaskCallbackRequest(CallbackRequest):
     """
+    Task callback status information.
+
     A Class with information about the success/failure TI callback to be executed. Currently, only failure
     callbacks (when tasks are externally killed) and Zombies are run via DagFileProcessorProcess.
 
     :param full_filepath: File Path to use to run the callback
     :param simple_task_instance: Simplified Task Instance representation
-    :param is_failure_callback: Flag to determine whether it is a Failure Callback or Success Callback
     :param msg: Additional Message that can be used for logging to determine failure/zombie
+    :param processor_subdir: Directory used by Dag Processor when parsed the dag.
+    :param task_callback_type: e.g. whether on success, on failure, on retry.
     """
 
     def __init__(
         self,
         full_filepath: str,
-        simple_task_instance: "SimpleTaskInstance",
-        is_failure_callback: Optional[bool] = True,
-        msg: Optional[str] = None,
+        simple_task_instance: SimpleTaskInstance,
+        processor_subdir: str | None = None,
+        msg: str | None = None,
+        task_callback_type: TaskInstanceState | None = None,
     ):
-        super().__init__(full_filepath=full_filepath, msg=msg)
+        super().__init__(full_filepath=full_filepath, processor_subdir=processor_subdir, msg=msg)
         self.simple_task_instance = simple_task_instance
-        self.is_failure_callback = is_failure_callback
+        self.task_callback_type = task_callback_type
+
+    @property
+    def is_failure_callback(self) -> bool:
+        """Returns True if the callback is a failure callback."""
+        if self.task_callback_type is None:
+            return True
+        return self.task_callback_type in {
+            TaskInstanceState.FAILED,
+            TaskInstanceState.UP_FOR_RETRY,
+            TaskInstanceState.UPSTREAM_FAILED,
+        }
 
     def to_json(self) -> str:
-        dict_obj = self.__dict__.copy()
-        dict_obj["simple_task_instance"] = dict_obj["simple_task_instance"].__dict__
-        return json.dumps(dict_obj)
+        from airflow.serialization.serialized_objects import BaseSerialization
+
+        val = BaseSerialization.serialize(self.__dict__, strict=True)
+        return json.dumps(val)
 
     @classmethod
     def from_json(cls, json_str: str):
-        from airflow.models.taskinstance import SimpleTaskInstance
+        from airflow.serialization.serialized_objects import BaseSerialization
 
-        kwargs = json.loads(json_str)
-        simple_ti = SimpleTaskInstance.from_dict(obj_dict=kwargs.pop("simple_task_instance"))
-        return cls(simple_task_instance=simple_ti, **kwargs)
+        val = json.loads(json_str)
+        return cls(**BaseSerialization.deserialize(val))
 
 
 class DagCallbackRequest(CallbackRequest):
@@ -94,6 +119,7 @@ class DagCallbackRequest(CallbackRequest):
     :param full_filepath: File Path to use to run the callback
     :param dag_id: DAG ID
     :param run_id: Run ID for the DagRun
+    :param processor_subdir: Directory used by Dag Processor when parsed the dag.
     :param is_failure_callback: Flag to determine whether it is a Failure Callback or Success Callback
     :param msg: Additional Message that can be used for logging
     """
@@ -103,23 +129,11 @@ class DagCallbackRequest(CallbackRequest):
         full_filepath: str,
         dag_id: str,
         run_id: str,
-        is_failure_callback: Optional[bool] = True,
-        msg: Optional[str] = None,
+        processor_subdir: str | None,
+        is_failure_callback: bool | None = True,
+        msg: str | None = None,
     ):
-        super().__init__(full_filepath=full_filepath, msg=msg)
+        super().__init__(full_filepath=full_filepath, processor_subdir=processor_subdir, msg=msg)
         self.dag_id = dag_id
         self.run_id = run_id
         self.is_failure_callback = is_failure_callback
-
-
-class SlaCallbackRequest(CallbackRequest):
-    """
-    A class with information about the SLA callback to be executed.
-
-    :param full_filepath: File Path to use to run the callback
-    :param dag_id: DAG ID
-    """
-
-    def __init__(self, full_filepath: str, dag_id: str, msg: Optional[str] = None):
-        super().__init__(full_filepath, msg)
-        self.dag_id = dag_id

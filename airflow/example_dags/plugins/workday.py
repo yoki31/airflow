@@ -15,30 +15,52 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
 """Plugin to demonstrate timetable registration and accommodate example DAGs."""
 
-# [START howto_timetable]
-from datetime import timedelta
-from typing import Optional
+from __future__ import annotations
 
+import logging
+from datetime import timedelta
+from typing import TYPE_CHECKING
+
+# [START howto_timetable]
 from pendulum import UTC, Date, DateTime, Time
 
 from airflow.plugins_manager import AirflowPlugin
-from airflow.timetables.base import DagRunInfo, DataInterval, TimeRestriction, Timetable
+from airflow.timetables.base import DagRunInfo, DataInterval, Timetable
+
+if TYPE_CHECKING:
+    from airflow.timetables.base import TimeRestriction
+
+log = logging.getLogger(__name__)
+try:
+    from pandas.tseries.holiday import USFederalHolidayCalendar
+
+    holiday_calendar = USFederalHolidayCalendar()
+except ImportError:
+    log.warning("Could not import pandas. Holidays will not be considered.")
+    holiday_calendar = None  # type: ignore[assignment]
 
 
 class AfterWorkdayTimetable(Timetable):
+    def get_next_workday(self, d: DateTime, incr=1) -> DateTime:
+        next_start = d
+        while True:
+            if next_start.weekday() not in (5, 6):  # not on weekend
+                if holiday_calendar is None:
+                    holidays = set()
+                else:
+                    holidays = holiday_calendar.holidays(start=next_start, end=next_start).to_pydatetime()
+                if next_start not in holidays:
+                    break
+            next_start = next_start.add(days=incr)
+        return next_start
 
     # [START howto_timetable_infer_manual_data_interval]
     def infer_manual_data_interval(self, run_after: DateTime) -> DataInterval:
-        weekday = run_after.weekday()
-        if weekday in (0, 6):  # Monday and Sunday -- interval is last Friday.
-            days_since_friday = (run_after.weekday() - 4) % 7
-            delta = timedelta(days=days_since_friday)
-        else:  # Otherwise the interval is yesterday.
-            delta = timedelta(days=1)
-        start = DateTime.combine((run_after - delta).date(), Time.min).replace(tzinfo=UTC)
+        start = DateTime.combine((run_after - timedelta(days=1)).date(), Time.min).replace(tzinfo=UTC)
+        # Skip backwards over weekends and holidays to find last run
+        start = self.get_next_workday(start, incr=-1)
         return DataInterval(start=start, end=(start + timedelta(days=1)))
 
     # [END howto_timetable_infer_manual_data_interval]
@@ -47,32 +69,26 @@ class AfterWorkdayTimetable(Timetable):
     def next_dagrun_info(
         self,
         *,
-        last_automated_data_interval: Optional[DataInterval],
+        last_automated_data_interval: DataInterval | None,
         restriction: TimeRestriction,
-    ) -> Optional[DagRunInfo]:
+    ) -> DagRunInfo | None:
         if last_automated_data_interval is not None:  # There was a previous run on the regular schedule.
             last_start = last_automated_data_interval.start
-            last_start_weekday = last_start.weekday()
-            if 0 <= last_start_weekday < 4:  # Last run on Monday through Thursday -- next is tomorrow.
-                delta = timedelta(days=1)
-            else:  # Last run on Friday -- skip to next Monday.
-                delta = timedelta(days=(7 - last_start_weekday))
-            next_start = DateTime.combine((last_start + delta).date(), Time.min).replace(tzinfo=UTC)
-        else:  # This is the first ever run on the regular schedule.
-            next_start = restriction.earliest
-            if next_start is None:  # No start_date. Don't schedule.
-                return None
-            if not restriction.catchup:
-                # If the DAG has catchup=False, today is the earliest to consider.
-                next_start = max(next_start, DateTime.combine(Date.today(), Time.min).replace(tzinfo=UTC))
-            elif next_start.time() != Time.min:
-                # If earliest does not fall on midnight, skip to the next day.
-                next_day = next_start.date() + timedelta(days=1)
-                next_start = DateTime.combine(next_day, Time.min).replace(tzinfo=UTC)
-            next_start_weekday = next_start.weekday()
-            if next_start_weekday in (5, 6):  # If next start is in the weekend, go to next Monday.
-                delta = timedelta(days=(7 - next_start_weekday))
-                next_start = next_start + delta
+            next_start = DateTime.combine((last_start + timedelta(days=1)).date(), Time.min)
+        # Otherwise this is the first ever run on the regular schedule...
+        elif (earliest := restriction.earliest) is None:
+            return None  # No start_date. Don't schedule.
+        elif not restriction.catchup:
+            # If the DAG has catchup=False, today is the earliest to consider.
+            next_start = max(earliest, DateTime.combine(Date.today(), Time.min))
+        elif earliest.time() != Time.min:
+            # If earliest does not fall on midnight, skip to the next day.
+            next_start = DateTime.combine(earliest.date() + timedelta(days=1), Time.min)
+        else:
+            next_start = earliest
+        # Skip weekends and holidays
+        next_start = self.get_next_workday(next_start.replace(tzinfo=UTC))
+
         if restriction.latest is not None and next_start > restriction.latest:
             return None  # Over the DAG's scheduled end; don't schedule.
         return DagRunInfo.interval(start=next_start, end=(next_start + timedelta(days=1)))

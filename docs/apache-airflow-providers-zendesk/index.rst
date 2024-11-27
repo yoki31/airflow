@@ -19,15 +19,43 @@
 ``apache-airflow-providers-zendesk``
 ====================================
 
-Content
--------
 
 .. toctree::
+    :hidden:
+    :maxdepth: 1
+    :caption: Basics
+
+    Home <self>
+    Changelog <changelog>
+    Security <security>
+
+.. toctree::
+    :hidden:
+    :maxdepth: 1
+    :caption: Guides
+
+    Connection types <connections>
+
+.. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: References
 
     Python API <_api/airflow/providers/zendesk/index>
-    Example DAGs <https://github.com/apache/airflow/tree/main/airflow/providers/zendesk/example_dags>
+
+.. toctree::
+    :hidden:
+    :maxdepth: 1
+    :caption: System tests
+
+    System Tests <_api/tests/system/zendesk/index>
+
+.. toctree::
+    :hidden:
+    :maxdepth: 1
+    :caption: Resources
+
+    Example DAGs <https://github.com/apache/airflow/tree/providers-zendesk/|version|/tests/system/providers/zendesk/example_zendesk_custom_get.py>
     PyPI Repository <https://pypi.org/project/apache-airflow-providers-zendesk/>
     Installing from sources <installing-providers-from-sources>
 
@@ -35,40 +63,42 @@ Content
 
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Commits
 
     Detailed list of commits <commits>
 
 
-Package apache-airflow-providers-zendesk
+apache-airflow-providers-zendesk package
 ------------------------------------------------------
 
 `Zendesk <https://www.zendesk.com/>`__
 
 
-Release: 3.0.2
+Release: 4.8.0
 
 Provider package
 ----------------
 
-This is a provider package for ``zendesk`` provider. All classes for this provider package
-are in ``airflow.providers.zendesk`` python package.
+This package is for the ``zendesk`` provider.
+All classes for this package are included in the ``airflow.providers.zendesk`` python package.
 
 Installation
 ------------
 
-You can install this package on top of an existing Airflow 2.1+ installation via
-``pip install apache-airflow-providers-zendesk``
+You can install this package on top of an existing Airflow 2 installation via
+``pip install apache-airflow-providers-zendesk``.
+For the minimum Airflow version supported, see ``Requirements`` below.
 
-PIP requirements
-----------------
+Requirements
+------------
+
+The minimum Apache Airflow version supported by this provider package is ``2.8.0``.
 
 ==================  ==================
 PIP package         Version required
 ==================  ==================
-``apache-airflow``  ``>=2.1.0``
-``zenpy``           ``>=2.0.24``
+``apache-airflow``  ``>=2.8.0``
+``zenpy``           ``>=2.0.40``
 ==================  ==================
-
-.. include:: ../../airflow/providers/zendesk/CHANGELOG.rst

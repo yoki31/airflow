@@ -14,27 +14,25 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
 """Platform and system specific function."""
+
+from __future__ import annotations
+
 import getpass
 import logging
 import os
 import pkgutil
 import platform
 import sys
+from functools import cache
 
-from airflow.compat.functools import cache
-
-IS_WINDOWS = platform.system() == 'Windows'
+IS_WINDOWS = platform.system() == "Windows"
 
 log = logging.getLogger(__name__)
 
 
 def is_tty():
-    """
-    Checks if the standard output is connected (is associated with a terminal device) to a tty(-like)
-    device.
-    """
+    """Check if stdout is connected (is associated with a terminal device) to a tty(-like) device."""
     if not hasattr(sys.stdout, "isatty"):
         return False
     return sys.stdout.isatty()
@@ -55,10 +53,10 @@ def is_terminal_support_colors() -> bool:
 
 
 def get_airflow_git_version():
-    """Returns the git commit hash representing the current version of the application."""
+    """Return the git commit hash representing the current version of the application."""
     git_version = None
     try:
-        git_version = str(pkgutil.get_data('airflow', 'git_version'), encoding="UTF-8")
+        git_version = str(pkgutil.get_data("airflow", "git_version"), encoding="UTF-8")
     except Exception as e:
         log.debug(e)
 
@@ -68,8 +66,7 @@ def get_airflow_git_version():
 @cache
 def getuser() -> str:
     """
-    Gets the username associated with the current user, or error with a nice
-    error message if there's no current user.
+    Get the username of the current user, or error with a nice error message if there's no current user.
 
     We don't want to fall back to os.getuid() because not having a username
     probably means the rest of the user environment is wrong (e.g. no $HOME).

@@ -14,14 +14,17 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
 from marshmallow import Schema, fields
 
 
 class DagSourceSchema(Schema):
-    """Dag Source schema"""
+    """Dag Source schema."""
 
     content = fields.String(dump_only=True)
+    dag_id = fields.String(dump_only=True)
+    version_number = fields.Integer(dump_only=True)
 
 
 dag_source_schema = DagSourceSchema()

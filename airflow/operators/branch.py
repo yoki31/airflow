@@ -15,31 +15,78 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""Branching operators"""
+"""Branching operators."""
 
-from typing import Iterable, Union
+from __future__ import annotations
 
-from airflow.models import BaseOperator
+from collections.abc import Iterable
+from typing import TYPE_CHECKING
+
+from airflow.models.baseoperator import BaseOperator
 from airflow.models.skipmixin import SkipMixin
-from airflow.utils.context import Context
+
+if TYPE_CHECKING:
+    from airflow.models import TaskInstance
+    from airflow.serialization.pydantic.taskinstance import TaskInstancePydantic
+    from airflow.utils.context import Context
 
 
-class BaseBranchOperator(BaseOperator, SkipMixin):
+class BranchMixIn(SkipMixin):
+    """Utility helper which handles the branching as one-liner."""
+
+    def do_branch(self, context: Context, branches_to_execute: str | Iterable[str]) -> str | Iterable[str]:
+        """Implement the handling of branching including logging."""
+        self.log.info("Branch into %s", branches_to_execute)
+        branch_task_ids = self._expand_task_group_roots(context["ti"], branches_to_execute)
+        self.skip_all_except(context["ti"], branch_task_ids)
+        return branches_to_execute
+
+    def _expand_task_group_roots(
+        self, ti: TaskInstance | TaskInstancePydantic, branches_to_execute: str | Iterable[str]
+    ) -> Iterable[str]:
+        """Expand any task group into its root task ids."""
+        if TYPE_CHECKING:
+            assert ti.task
+
+        task = ti.task
+        dag = task.dag
+        if TYPE_CHECKING:
+            assert dag
+
+        if branches_to_execute is None:
+            return
+        elif isinstance(branches_to_execute, str) or not isinstance(branches_to_execute, Iterable):
+            branches_to_execute = [branches_to_execute]
+
+        for branch in branches_to_execute:
+            if branch in dag.task_group_dict:
+                tg = dag.task_group_dict[branch]
+                root_ids = [root.task_id for root in tg.roots]
+                self.log.info("Expanding task group %s into %s", tg.group_id, root_ids)
+                yield from root_ids
+            else:
+                yield branch
+
+
+class BaseBranchOperator(BaseOperator, BranchMixIn):
     """
-    This is a base class for creating operators with branching functionality,
-    similarly to BranchPythonOperator.
+    A base class for creating operators with branching functionality, like to BranchPythonOperator.
 
-    Users should subclass this operator and implement the function
+    Users should create a subclass from this operator and implement the function
     `choose_branch(self, context)`. This should run whatever business logic
-    is needed to determine the branch, and return either the task_id for
-    a single task (as a str) or a list of task_ids.
+    is needed to determine the branch, and return one of the following:
+    - A single task_id (as a str)
+    - A single task_group_id (as a str)
+    - A list containing a combination of task_ids and task_group_ids
 
-    The operator will continue with the returned task_id(s), and all other
+    The operator will continue with the returned task_id(s) and/or task_group_id(s), and all other
     tasks directly downstream of this operator will be skipped.
     """
 
-    def choose_branch(self, context: Context) -> Union[str, Iterable[str]]:
+    def choose_branch(self, context: Context) -> str | Iterable[str]:
         """
+        Abstract method to choose which branch to run.
+
         Subclasses should implement this, running whatever logic is
         necessary to choose a branch and returning a task_id or list of
         task_ids.
@@ -49,6 +96,4 @@ class BaseBranchOperator(BaseOperator, SkipMixin):
         raise NotImplementedError
 
     def execute(self, context: Context):
-        branches_to_execute = self.choose_branch(context)
-        self.skip_all_except(context['ti'], branches_to_execute)
-        return branches_to_execute
+        return self.do_branch(context, self.choose_branch(context))

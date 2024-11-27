@@ -14,67 +14,82 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from typing import Optional
+from __future__ import annotations
 
-from flask import Response, request
+from http import HTTPStatus
+from typing import TYPE_CHECKING
+
+from flask import Response
 from marshmallow import ValidationError
-from sqlalchemy import func
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
 
 from airflow.api_connexion import security
+from airflow.api_connexion.endpoints.request_dict import get_json_request_dict
 from airflow.api_connexion.exceptions import AlreadyExists, BadRequest, NotFound
 from airflow.api_connexion.parameters import apply_sorting, check_limit, format_parameters
 from airflow.api_connexion.schemas.pool_schema import PoolCollection, pool_collection_schema, pool_schema
-from airflow.api_connexion.types import APIResponse, UpdateMask
 from airflow.models.pool import Pool
-from airflow.security import permissions
+from airflow.utils.api_migration import mark_fastapi_migration_done
 from airflow.utils.session import NEW_SESSION, provide_session
+from airflow.www.decorators import action_logging
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from airflow.api_connexion.types import APIResponse, UpdateMask
 
 
-@security.requires_access([(permissions.ACTION_CAN_DELETE, permissions.RESOURCE_POOL)])
+@mark_fastapi_migration_done
+@security.requires_access_pool("DELETE")
+@action_logging
 @provide_session
 def delete_pool(*, pool_name: str, session: Session = NEW_SESSION) -> APIResponse:
-    """Delete a pool"""
+    """Delete a pool."""
     if pool_name == "default_pool":
         raise BadRequest(detail="Default Pool can't be deleted")
-    affected_count = session.query(Pool).filter(Pool.pool == pool_name).delete()
+    affected_count = session.execute(delete(Pool).where(Pool.pool == pool_name)).rowcount
+
     if affected_count == 0:
         raise NotFound(detail=f"Pool with name:'{pool_name}' not found")
-    return Response(status=204)
+    return Response(status=HTTPStatus.NO_CONTENT)
 
 
-@security.requires_access([(permissions.ACTION_CAN_READ, permissions.RESOURCE_POOL)])
+@mark_fastapi_migration_done
+@security.requires_access_pool("GET")
 @provide_session
 def get_pool(*, pool_name: str, session: Session = NEW_SESSION) -> APIResponse:
-    """Get a pool"""
-    obj = session.query(Pool).filter(Pool.pool == pool_name).one_or_none()
+    """Get a pool."""
+    obj = session.scalar(select(Pool).where(Pool.pool == pool_name))
     if obj is None:
         raise NotFound(detail=f"Pool with name:'{pool_name}' not found")
     return pool_schema.dump(obj)
 
 
-@security.requires_access([(permissions.ACTION_CAN_READ, permissions.RESOURCE_POOL)])
+@mark_fastapi_migration_done
+@security.requires_access_pool("GET")
 @format_parameters({"limit": check_limit})
 @provide_session
 def get_pools(
     *,
     limit: int,
     order_by: str = "id",
-    offset: Optional[int] = None,
+    offset: int | None = None,
     session: Session = NEW_SESSION,
 ) -> APIResponse:
-    """Get all pools"""
+    """Get all pools."""
     to_replace = {"name": "pool"}
-    allowed_filter_attrs = ['name', 'slots', "id"]
-    total_entries = session.query(func.count(Pool.id)).scalar()
-    query = session.query(Pool)
-    query = apply_sorting(query, order_by, to_replace, allowed_filter_attrs)
-    pools = query.offset(offset).limit(limit).all()
+    allowed_sort_attrs = ["name", "slots", "id"]
+    total_entries = session.scalars(func.count(Pool.id)).one()
+    query = select(Pool)
+    query = apply_sorting(query, order_by, to_replace, allowed_sort_attrs)
+    pools = session.scalars(query.offset(offset).limit(limit)).all()
     return pool_collection_schema.dump(PoolCollection(pools=pools, total_entries=total_entries))
 
 
-@security.requires_access([(permissions.ACTION_CAN_EDIT, permissions.RESOURCE_POOL)])
+@mark_fastapi_migration_done
+@security.requires_access_pool("PUT")
+@action_logging
 @provide_session
 def patch_pool(
     *,
@@ -82,23 +97,21 @@ def patch_pool(
     update_mask: UpdateMask = None,
     session: Session = NEW_SESSION,
 ) -> APIResponse:
-    """Update a pool"""
-    # Only slots can be modified in 'default_pool'
-    try:
-        if pool_name == Pool.DEFAULT_POOL_NAME and request.json["name"] != Pool.DEFAULT_POOL_NAME:
-            if update_mask and len(update_mask) == 1 and update_mask[0].strip() == "slots":
-                pass
-            else:
-                raise BadRequest(detail="Default Pool's name can't be modified")
-    except KeyError:
-        pass
+    """Update a pool."""
+    request_dict = get_json_request_dict()
+    # Only slots and include_deferred can be modified in 'default_pool'
+    if pool_name == Pool.DEFAULT_POOL_NAME and request_dict.get("name", None) != Pool.DEFAULT_POOL_NAME:
+        if update_mask and all(mask.strip() in {"slots", "include_deferred"} for mask in update_mask):
+            pass
+        else:
+            raise BadRequest(detail="Default Pool's name can't be modified")
 
-    pool = session.query(Pool).filter(Pool.pool == pool_name).first()
+    pool = session.scalar(select(Pool).where(Pool.pool == pool_name).limit(1))
     if not pool:
         raise NotFound(detail=f"Pool with name:'{pool_name}' not found")
 
     try:
-        patch_body = pool_schema.load(request.json)
+        patch_body = pool_schema.load(request_dict)
     except ValidationError as err:
         raise BadRequest(detail=str(err.messages))
 
@@ -106,10 +119,15 @@ def patch_pool(
         update_mask = [i.strip() for i in update_mask]
         _patch_body = {}
         try:
+            # MyPy infers a list[Optional[str]]  type here but it should be a list[str]
+            # there is no way field is None here (UpdateMask is a list[str])
+            # so if pool_schema.declared_fields[field].attribute is None file is returned
             update_mask = [
-                pool_schema.declared_fields[field].attribute
-                if pool_schema.declared_fields[field].attribute
-                else field
+                (
+                    pool_schema.declared_fields[field].attribute  # type: ignore[misc]
+                    if pool_schema.declared_fields[field].attribute
+                    else field
+                )
                 for field in update_mask
             ]
         except KeyError as err:
@@ -119,7 +137,7 @@ def patch_pool(
 
     else:
         required_fields = {"name", "slots"}
-        fields_diff = required_fields - set(request.json.keys())
+        fields_diff = required_fields.difference(get_json_request_dict())
         if fields_diff:
             raise BadRequest(detail=f"Missing required property(ies): {sorted(fields_diff)}")
 
@@ -129,17 +147,19 @@ def patch_pool(
     return pool_schema.dump(pool)
 
 
-@security.requires_access([(permissions.ACTION_CAN_CREATE, permissions.RESOURCE_POOL)])
+@mark_fastapi_migration_done
+@security.requires_access_pool("POST")
+@action_logging
 @provide_session
 def post_pool(*, session: Session = NEW_SESSION) -> APIResponse:
-    """Create a pool"""
+    """Create a pool."""
     required_fields = {"name", "slots"}  # Pool would require both fields in the post request
-    fields_diff = required_fields - set(request.json.keys())
+    fields_diff = required_fields.difference(get_json_request_dict())
     if fields_diff:
         raise BadRequest(detail=f"Missing required property(ies): {sorted(fields_diff)}")
 
     try:
-        post_body = pool_schema.load(request.json, session=session)
+        post_body = pool_schema.load(get_json_request_dict(), session=session)
     except ValidationError as err:
         raise BadRequest(detail=str(err.messages))
 

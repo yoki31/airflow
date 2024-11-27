@@ -19,26 +19,43 @@
 ``apache-airflow-providers-dingding``
 =====================================
 
-Content
--------
 
 .. toctree::
+    :hidden:
+    :maxdepth: 1
+    :caption: Basics
+
+    Home <self>
+    Changelog <changelog>
+    Security <security>
+
+.. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Guides
 
     Operators <operators>
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: References
 
     Python API <_api/airflow/providers/dingding/index>
 
 .. toctree::
+    :hidden:
+    :maxdepth: 1
+    :caption: System tests
+
+    System Tests <_api/tests/system/dingding/index>
+
+.. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Resources
 
-    Example DAGs <https://github.com/apache/airflow/tree/main/airflow/providers/dingding/example_dags>
+    Example DAGs <https://github.com/apache/airflow/tree/providers-dingding/|version|/tests/system/providers/dingding>
     PyPI Repository <https://pypi.org/project/apache-airflow-providers-dingding/>
     Installing from sources <installing-providers-from-sources>
 
@@ -46,31 +63,45 @@ Content
 
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Commits
 
     Detailed list of commits <commits>
 
 
-Package apache-airflow-providers-dingding
+apache-airflow-providers-dingding package
 ------------------------------------------------------
 
-`Dingding <https://oapi.dingtalk.com/>`__
+`DingTalk <https://www.dingtalk.com/>`__
 
 
-Release: 2.0.3
+Release: 3.6.0
 
 Provider package
 ----------------
 
-This is a provider package for ``dingding`` provider. All classes for this provider package
-are in ``airflow.providers.dingding`` python package.
+This package is for the ``dingding`` provider.
+All classes for this package are included in the ``airflow.providers.dingding`` python package.
 
 Installation
 ------------
 
-You can install this package on top of an existing Airflow 2.1+ installation via
-``pip install apache-airflow-providers-dingding``
+You can install this package on top of an existing Airflow 2 installation via
+``pip install apache-airflow-providers-dingding``.
+For the minimum Airflow version supported, see ``Requirements`` below.
+
+Requirements
+------------
+
+The minimum Apache Airflow version supported by this provider package is ``2.8.0``.
+
+=================================  ==================
+PIP package                        Version required
+=================================  ==================
+``apache-airflow``                 ``>=2.8.0``
+``apache-airflow-providers-http``
+=================================  ==================
 
 Cross provider package dependencies
 -----------------------------------
@@ -97,7 +128,5 @@ Downloading official packages
 You can download officially released packages and verify their checksums and signatures from the
 `Official Apache Download site <https://downloads.apache.org/airflow/providers/>`_
 
-* `The apache-airflow-providers-dingding 2.0.3 sdist package <https://downloads.apache.org/airflow/providers/apache-airflow-providers-dingding-2.0.3.tar.gz>`_ (`asc <https://downloads.apache.org/airflow/providers/apache-airflow-providers-dingding-2.0.3.tar.gz.asc>`__, `sha512 <https://downloads.apache.org/airflow/providers/apache-airflow-providers-dingding-2.0.3.tar.gz.sha512>`__)
-* `The apache-airflow-providers-dingding 2.0.3 wheel package <https://downloads.apache.org/airflow/providers/apache_airflow_providers_dingding-2.0.3-py3-none-any.whl>`_ (`asc <https://downloads.apache.org/airflow/providers/apache_airflow_providers_dingding-2.0.3-py3-none-any.whl.asc>`__, `sha512 <https://downloads.apache.org/airflow/providers/apache_airflow_providers_dingding-2.0.3-py3-none-any.whl.sha512>`__)
-
-.. include:: ../../airflow/providers/dingding/CHANGELOG.rst
+* `The apache-airflow-providers-dingding 3.6.0 sdist package <https://downloads.apache.org/airflow/providers/apache_airflow_providers_dingding-3.6.0.tar.gz>`_ (`asc <https://downloads.apache.org/airflow/providers/apache_airflow_providers_dingding-3.6.0.tar.gz.asc>`__, `sha512 <https://downloads.apache.org/airflow/providers/apache_airflow_providers_dingding-3.6.0.tar.gz.sha512>`__)
+* `The apache-airflow-providers-dingding 3.6.0 wheel package <https://downloads.apache.org/airflow/providers/apache_airflow_providers_dingding-3.6.0-py3-none-any.whl>`_ (`asc <https://downloads.apache.org/airflow/providers/apache_airflow_providers_dingding-3.6.0-py3-none-any.whl.asc>`__, `sha512 <https://downloads.apache.org/airflow/providers/apache_airflow_providers_dingding-3.6.0-py3-none-any.whl.sha512>`__)

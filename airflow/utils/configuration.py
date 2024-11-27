@@ -15,6 +15,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
 import json
 import os
@@ -26,8 +27,7 @@ from airflow.utils.platform import IS_WINDOWS
 
 def tmp_configuration_copy(chmod=0o600, include_env=True, include_cmds=True):
     """
-    Returns a path for a temporary file including a full copy of the configuration
-    settings.
+    Return a path for a temporary file including a full copy of the configuration settings.
 
     :param include_env: Should the value of configuration from ``AIRFLOW__``
         environment variables be included or not
@@ -41,7 +41,7 @@ def tmp_configuration_copy(chmod=0o600, include_env=True, include_cmds=True):
     )
     temp_fd, cfg_path = mkstemp()
 
-    with os.fdopen(temp_fd, 'w') as temp_file:
+    with os.fdopen(temp_fd, "w") as temp_file:
         # Set the permissions before we write anything to it.
         if chmod is not None and not IS_WINDOWS:
             os.fchmod(temp_fd, chmod)

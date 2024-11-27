@@ -15,6 +15,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
 from sqlalchemy import Column, Integer, Text
 
@@ -24,7 +25,8 @@ from airflow.utils.sqlalchemy import UtcDateTime
 
 
 class LogTemplate(Base):
-    """Changes to ``log_filename_template`` and ``elasticsearch_id``.
+    """
+    Changes to ``log_filename_template`` and ``elasticsearch_id``.
 
     This table is automatically populated when Airflow starts up, to store the
     config's value if it does not match the last row in the table.

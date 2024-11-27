@@ -21,10 +21,11 @@ Customizing DAG Scheduling with Timetables
 
 For our example, let's say a company wants to run a job after each weekday to
 process data collected during the work day. The first intuitive answer to this
-would be ``schedule_interval="0 0 * * 1-5"`` (midnight on Monday to Friday), but
+would be ``schedule="0 0 * * 1-5"`` (midnight on Monday to Friday), but
 this means data collected on Friday will *not* be processed right after Friday
 ends, but on the next Monday, and that run's interval would be from midnight
-Friday to midnight *Monday*. What we want is:
+Friday to midnight *Monday*. Further, the above schedule string cannot skip
+processing on holidays. What we want is:
 
 * Schedule a run for each Monday, Tuesday, Wednesday, Thursday, and Friday. The
   run's data interval would cover from midnight of each day, to midnight of the
@@ -32,6 +33,7 @@ Friday to midnight *Monday*. What we want is:
 * Each run would be created right after the data interval ends. The run covering
   Monday happens on midnight Tuesday and so on. The run covering Friday happens
   on midnight Saturday. No runs happen on midnights Sunday and Monday.
+* Do not schedule a run on defined holidays.
 
 For simplicity, we will only deal with UTC datetimes in this example.
 
@@ -46,8 +48,8 @@ Timetable Registration
 ----------------------
 
 A timetable must be a subclass of :class:`~airflow.timetables.base.Timetable`,
-and be registered as a part of a :doc:`plugin </plugins>`. The following is a
-skeleton for us to implement a new timetable:
+and be registered as a part of a :doc:`plugin </authoring-and-scheduling/plugins>`.
+The following is a skeleton for us to implement a new timetable:
 
 .. code-block:: python
 
@@ -78,9 +80,9 @@ file:
     with DAG(
         dag_id="example_after_workday_timetable_dag",
         start_date=pendulum.datetime(2021, 3, 10, tz="UTC"),
-        timetable=AfterWorkdayTimetable(),
+        schedule=AfterWorkdayTimetable(),
         tags=["example", "timetable"],
-    ) as dag:
+    ):
         ...
 
 
@@ -123,7 +125,7 @@ Next is the implementation of ``next_dagrun_info``:
     :start-after: [START howto_timetable_next_dagrun_info]
     :end-before: [END howto_timetable_next_dagrun_info]
 
-This method accepts two arguments. ``last_automated_dagrun`` is a
+This method accepts two arguments. ``last_automated_data_interval`` is a
 :class:`~airflow.timetables.base.DataInterval` instance indicating the data
 interval of this DAG's previous non-manually-triggered run, or ``None`` if this
 is the first time ever the DAG is being scheduled. ``restriction`` encapsulates
@@ -144,10 +146,10 @@ how the DAG and its tasks specify the schedule, and contains three attributes:
     (usually after the end of the data interval).
 
 If there was a run scheduled previously, we should now schedule for the next
-weekday, i.e. plus one day if the previous run was on Monday through Thursday,
-or three days if it was on Friday. If there was not a previous scheduled run,
-however, we pick the next workday's midnight after ``restriction.earliest``
-(unless it *is* a workday's midnight; in which case it's used directly).
+non-holiday weekday by looping through subsequent days to find one that is not
+a Saturday, Sunday, or US holiday. If there was not a previous scheduled run,
+however, we pick the next non-holiday workday's midnight after
+``restriction.earliest``.
 ``restriction.catchup`` also needs to be considered---if it's ``False``, we
 can't schedule before the current time, even if ``start_date`` values are in the
 past. Finally, if our calculated data interval is later than
@@ -194,16 +196,16 @@ For reference, here's our plugin and DAG files in their entirety:
 
     from airflow import DAG
     from airflow.example_dags.plugins.workday import AfterWorkdayTimetable
-    from airflow.operators.dummy import DummyOperator
+    from airflow.operators.empty import EmptyOperator
 
 
     with DAG(
         dag_id="example_workday_timetable",
         start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
-        timetable=AfterWorkdayTimetable(),
+        schedule=AfterWorkdayTimetable(),
         tags=["example", "timetable"],
-    ) as dag:
-        DummyOperator(task_id="run_this")
+    ):
+        EmptyOperator(task_id="run_this")
 
 
 Parameterized Timetables
@@ -226,7 +228,7 @@ purpose, we'd want to do something like:
             end = start + timedelta(days=1)
             return DagRunInfo(
                 data_interval=DataInterval(start=start, end=end),
-                run_after=DateTime.combine(end.date(), self._schedule_at),
+                run_after=DateTime.combine(end.date(), self._schedule_at).replace(tzinfo=UTC),
             )
 
 However, since the timetable is a part of the DAG, we need to tell Airflow how
@@ -238,11 +240,11 @@ implementing two additional methods on our timetable class:
     class SometimeAfterWorkdayTimetable(Timetable):
         ...
 
-        def serialize(self) -> Dict[str, Any]:
+        def serialize(self) -> dict[str, Any]:
             return {"schedule_at": self._schedule_at.isoformat()}
 
         @classmethod
-        def deserialize(cls, value: Dict[str, Any]) -> Timetable:
+        def deserialize(cls, value: dict[str, Any]) -> Timetable:
             return cls(Time.fromisoformat(value["schedule_at"]))
 
 When the DAG is being serialized, ``serialize`` is called to obtain a
@@ -270,9 +272,9 @@ So for a DAG declared like this:
 .. code-block:: python
 
     with DAG(
-        timetable=SometimeAfterWorkdayTimetable(Time(8)),  # 8am.
+        schedule=SometimeAfterWorkdayTimetable(Time(8)),  # 8am.
         ...,
-    ) as dag:
+    ):
         ...
 
 The *Schedule* column would say ``after each workday, at 08:00:00``.
@@ -295,14 +297,14 @@ For our ``SometimeAfterWorkdayTimetable`` class, for example, we could have:
 
 .. code-block:: python
 
-    description = "Schedule: after each workday, at {_schedule_at}"
+    description = "Schedule: after each workday"
 
 You can also wrap this inside ``__init__``, if you want to derive description.
 
 .. code-block:: python
 
     def __init__(self) -> None:
-        self.description = "Schedule: after each workday, at {self._schedule_at}"
+        self.description = "Schedule: after each workday, at f{self._schedule_at}"
 
 
 This is specially useful when you want to provide comprehensive description which is different from ``summary`` property.
@@ -312,9 +314,9 @@ So for a DAG declared like this:
 .. code-block:: python
 
     with DAG(
-        timetable=SometimeAfterWorkdayTimetable(Time(8)),  # 8am.
+        schedule=SometimeAfterWorkdayTimetable(Time(8)),  # 8am.
         ...,
-    ) as dag:
+    ):
         ...
 
 The *i* icon  would show,  ``Schedule: after each workday, at 08:00:00``.
@@ -323,3 +325,31 @@ The *i* icon  would show,  ``Schedule: after each workday, at 08:00:00``.
 .. seealso::
     Module :mod:`airflow.timetables.interval`
         check ``CronDataIntervalTimetable`` description implementation which provides comprehensive cron description in UI.
+
+Changing generated ``run_id``
+-----------------------------
+
+.. versionadded:: 2.4
+
+Since Airflow 2.4, Timetables are also responsible for generating the ``run_id`` for DagRuns.
+
+For example to have the Run ID show a "human friendly" date of when the run started (that is, the end of the data interval, rather then the start which is the date currently used) you could add a method like this to a custom timetable:
+
+.. code-block:: python
+
+    def generate_run_id(
+        self,
+        *,
+        run_type: DagRunType,
+        logical_date: DateTime,
+        data_interval: DataInterval | None,
+        **extra,
+    ) -> str:
+        if run_type == DagRunType.SCHEDULED and data_interval:
+            return data_interval.end.format("YYYY-MM-DD dddd")
+        return super().generate_run_id(
+            run_type=run_type, logical_date=logical_date, data_interval=data_interval, **extra
+        )
+
+
+Remember that the RunID is limited to 250 characters, and must be unique within a DAG.

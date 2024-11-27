@@ -18,18 +18,44 @@
 
 set -euo pipefail
 rm -rf docker-context-files/*.whl
-rm -rf docker-context-files/*.tgz
-export FORCE_ANSWER_TO_QUESTIONS="true"
+rm -rf docker-context-files/*.tar.gz
+export ANSWER="yes"
 export CI="true"
+export GITHUB_TOKEN=""
+export PLATFORM=${PLATFORM:="linux/amd64,linux/arm64"}
 
-if [[ $1 == "" ]]; then
-  echo
-  echo ERROR! Please specify python version as parameter
-  echo
-  exit 1
-fi
+breeze setup self-upgrade --use-current-airflow-sources
 
-python_version=$1
+for PYTHON in 3.9 3.10 3.11 3.12
+do
+    breeze ci-image build \
+         --builder airflow_cache \
+         --run-in-parallel \
+         --prepare-buildx-cache \
+         --platform "${PLATFORM}" \
+         --python ${PYTHON} \
+         --verbose
+done
 
-./breeze prepare-build-cache --python "${python_version}" --platform linux/amd64,linux/arm64 --verbose
-./breeze prepare-build-cache --python "${python_version}" --platform linux/amd64,linux/arm64 --production-image --verbose
+rm -fv ./dist/* ./docker-context-files/*
+
+breeze release-management prepare-provider-packages \
+    --package-list-file ./prod_image_installed_providers.txt \
+    --package-format wheel \
+    --version-suffix-for-pypi dev0
+
+breeze release-management prepare-airflow-package --package-format wheel --version-suffix-for-pypi dev0
+
+mv -v ./dist/*.whl ./docker-context-files && chmod a+r ./docker-context-files/*
+
+for PYTHON in 3.9 3.10 3.11 3.12
+do
+    breeze prod-image build \
+         --builder airflow_cache \
+         --run-in-parallel \
+         --install-packages-from-context \
+         --prepare-buildx-cache \
+         --platform "${PLATFORM}" \
+         --python ${PYTHON} \
+         --verbose
+done

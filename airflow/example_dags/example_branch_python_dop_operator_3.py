@@ -15,50 +15,45 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+"""
+Example DAG demonstrating the usage of ``@task.branch`` TaskFlow API decorator with depends_on_past=True,
+where tasks may be run or skipped on alternating runs.
+"""
 
-"""
-Example DAG demonstrating the usage of BranchPythonOperator with depends_on_past=True, where tasks may be run
-or skipped on alternating runs.
-"""
+from __future__ import annotations
+
 import pendulum
 
-from airflow import DAG
-from airflow.operators.dummy import DummyOperator
-from airflow.operators.python import BranchPythonOperator
+from airflow.decorators import task
+from airflow.models.dag import DAG
+from airflow.operators.empty import EmptyOperator
 
 
-def should_run(**kwargs):
+@task.branch()
+def should_run(**kwargs) -> str:
     """
-    Determine which dummy_task should be run based on if the execution date minute is even or odd.
+    Determine which empty_task should be run based on if the logical date minute is even or odd.
 
     :param dict kwargs: Context
     :return: Id of the task to run
-    :rtype: str
     """
-    print(
-        '------------- exec dttm = {} and minute = {}'.format(
-            kwargs['execution_date'], kwargs['execution_date'].minute
-        )
-    )
-    if kwargs['execution_date'].minute % 2 == 0:
-        return "dummy_task_1"
+    print(f"------------- exec dttm = {kwargs['logical_date']} and minute = {kwargs['logical_date'].minute}")
+    if kwargs["logical_date"].minute % 2 == 0:
+        return "empty_task_1"
     else:
-        return "dummy_task_2"
+        return "empty_task_2"
 
 
 with DAG(
-    dag_id='example_branch_dop_operator_v3',
-    schedule_interval='*/1 * * * *',
+    dag_id="example_branch_dop_operator_v3",
+    schedule="*/1 * * * *",
     start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
     catchup=False,
-    default_args={'depends_on_past': True},
-    tags=['example'],
+    default_args={"depends_on_past": True},
+    tags=["example"],
 ) as dag:
-    cond = BranchPythonOperator(
-        task_id='condition',
-        python_callable=should_run,
-    )
+    cond = should_run()
 
-    dummy_task_1 = DummyOperator(task_id='dummy_task_1')
-    dummy_task_2 = DummyOperator(task_id='dummy_task_2')
-    cond >> [dummy_task_1, dummy_task_2]
+    empty_task_1 = EmptyOperator(task_id="empty_task_1")
+    empty_task_2 = EmptyOperator(task_id="empty_task_2")
+    cond >> [empty_task_1, empty_task_2]

@@ -14,6 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
 import datetime
 import inspect
@@ -23,21 +24,19 @@ import typing
 import marshmallow
 from dateutil import relativedelta
 from marshmallow import Schema, fields, validate
-from marshmallow_oneofschema import OneOfSchema
 
 from airflow.models.mappedoperator import MappedOperator
 from airflow.serialization.serialized_objects import SerializedBaseOperator
-from airflow.utils.weight_rule import WeightRule
 
 
 class CronExpression(typing.NamedTuple):
-    """Cron expression schema"""
+    """Cron expression schema."""
 
     value: str
 
 
 class TimeDeltaSchema(Schema):
-    """Time delta schema"""
+    """Time delta schema."""
 
     objectType = fields.Constant("TimeDelta", data_key="__type")
     days = fields.Integer()
@@ -46,14 +45,13 @@ class TimeDeltaSchema(Schema):
 
     @marshmallow.post_load
     def make_time_delta(self, data, **kwargs):
-        """Create time delta based on data"""
-        if "objectType" in data:
-            del data["objectType"]
+        """Create time delta based on data."""
+        data.pop("objectType", None)
         return datetime.timedelta(**data)
 
 
 class RelativeDeltaSchema(Schema):
-    """Relative delta schema"""
+    """Relative delta schema."""
 
     objectType = fields.Constant("RelativeDelta", data_key="__type")
     years = fields.Integer()
@@ -74,79 +72,47 @@ class RelativeDeltaSchema(Schema):
 
     @marshmallow.post_load
     def make_relative_delta(self, data, **kwargs):
-        """Create relative delta based on data"""
-        if "objectType" in data:
-            del data["objectType"]
-
+        """Create relative delta based on data."""
+        data.pop("objectType", None)
         return relativedelta.relativedelta(**data)
 
 
 class CronExpressionSchema(Schema):
-    """Cron expression schema"""
+    """Cron expression schema."""
 
     objectType = fields.Constant("CronExpression", data_key="__type")
     value = fields.String(required=True)
 
     @marshmallow.post_load
     def make_cron_expression(self, data, **kwargs):
-        """Create cron expression based on data"""
+        """Create cron expression based on data."""
         return CronExpression(data["value"])
 
 
-class ScheduleIntervalSchema(OneOfSchema):
-    """
-    Schedule interval.
-
-    It supports the following types:
-
-    * TimeDelta
-    * RelativeDelta
-    * CronExpression
-    """
-
-    type_field = "__type"
-    type_schemas = {
-        "TimeDelta": TimeDeltaSchema,
-        "RelativeDelta": RelativeDeltaSchema,
-        "CronExpression": CronExpressionSchema,
-    }
-
-    def _dump(self, obj, update_fields=True, **kwargs):
-        if isinstance(obj, str):
-            obj = CronExpression(obj)
-
-        return super()._dump(obj, update_fields=update_fields, **kwargs)
-
-    def get_obj_type(self, obj):
-        """Select schema based on object type"""
-        if isinstance(obj, datetime.timedelta):
-            return "TimeDelta"
-        elif isinstance(obj, relativedelta.relativedelta):
-            return "RelativeDelta"
-        elif isinstance(obj, CronExpression):
-            return "CronExpression"
-        else:
-            raise Exception(f"Unknown object type: {obj.__class__.__name__}")
-
-
 class ColorField(fields.String):
-    """Schema for color property"""
+    """Schema for color property."""
 
     def __init__(self, **metadata):
         super().__init__(**metadata)
-        self.validators = [validate.Regexp("^#[a-fA-F0-9]{3,6}$")] + list(self.validators)
+        self.validators = [validate.Regexp("^#[a-fA-F0-9]{3,6}$"), *self.validators]
 
 
 class WeightRuleField(fields.String):
-    """Schema for WeightRule"""
+    """Schema for WeightRule."""
 
-    def __init__(self, **metadata):
-        super().__init__(**metadata)
-        self.validators = [validate.OneOf(WeightRule.all_weight_rules())] + list(self.validators)
+    def _serialize(self, value, attr, obj, **kwargs):
+        from airflow.serialization.serialized_objects import encode_priority_weight_strategy
+
+        return encode_priority_weight_strategy(value)
+
+    def _deserialize(self, value, attr, data, **kwargs):
+        from airflow.serialization.serialized_objects import decode_priority_weight_strategy
+
+        return decode_priority_weight_strategy(value)
 
 
 class TimezoneField(fields.String):
-    """Schema for timezone"""
+    """Schema for timezone."""
 
 
 class ClassReferenceSchema(Schema):

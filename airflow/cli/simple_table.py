@@ -14,9 +14,12 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
+
 import inspect
 import json
-from typing import Any, Callable, Dict, List, Optional, Union
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, Callable
 
 from rich.box import ASCII_DOUBLE_HEAD
 from rich.console import Console
@@ -28,9 +31,16 @@ from airflow.plugins_manager import PluginsDirectorySource
 from airflow.utils import yaml
 from airflow.utils.platform import is_tty
 
+if TYPE_CHECKING:
+    from airflow.typing_compat import TypeGuard
+
+
+def is_data_sequence(data: Sequence[dict | Any]) -> TypeGuard[Sequence[dict]]:
+    return all(isinstance(d, dict) for d in data)
+
 
 class AirflowConsole(Console):
-    """Airflow rich console"""
+    """Airflow rich console."""
 
     def __init__(self, show_header: bool = True, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -40,40 +50,40 @@ class AirflowConsole(Console):
         # If show header in tables
         self.show_header = show_header
 
-    def print_as_json(self, data: Dict):
-        """Renders dict as json text representation"""
+    def print_as_json(self, data: dict):
+        """Render dict as json text representation."""
         json_content = json.dumps(data)
         self.print(Syntax(json_content, "json", theme="ansi_dark"), soft_wrap=True)
 
-    def print_as_yaml(self, data: Dict):
-        """Renders dict as yaml text representation"""
+    def print_as_yaml(self, data: dict):
+        """Render dict as yaml text representation."""
         yaml_content = yaml.dump(data)
         self.print(Syntax(yaml_content, "yaml", theme="ansi_dark"), soft_wrap=True)
 
-    def print_as_table(self, data: List[Dict]):
-        """Renders list of dictionaries as table"""
+    def print_as_table(self, data: list[dict]):
+        """Render list of dictionaries as table."""
         if not data:
             self.print("No data found")
             return
 
         table = SimpleTable(show_header=self.show_header)
-        for col in data[0].keys():
+        for col in data[0]:
             table.add_column(col)
 
         for row in data:
             table.add_row(*(str(d) for d in row.values()))
         self.print(table)
 
-    def print_as_plain_table(self, data: List[Dict]):
-        """Renders list of dictionaries as a simple table than can be easily piped"""
+    def print_as_plain_table(self, data: list[dict]):
+        """Render list of dictionaries as a simple table than can be easily piped."""
         if not data:
             self.print("No data found")
             return
         rows = [d.values() for d in data]
-        output = tabulate(rows, tablefmt="plain", headers=list(data[0].keys()))
+        output = tabulate(rows, tablefmt="plain", headers=list(data[0]))
         print(output)
 
-    def _normalize_data(self, value: Any, output: str) -> Optional[Union[list, str, dict]]:
+    def _normalize_data(self, value: Any, output: str) -> list | str | dict | None:
         if isinstance(value, (tuple, list)):
             if output == "table":
                 return ",".join(str(self._normalize_data(x, output)) for x in value)
@@ -86,9 +96,14 @@ class AirflowConsole(Console):
             return None
         return str(value)
 
-    def print_as(self, data: List[Union[Dict, Any]], output: str, mapper: Optional[Callable] = None):
-        """Prints provided using format specified by output argument"""
-        output_to_renderer: Dict[str, Callable[[Any], None]] = {
+    def print_as(
+        self,
+        data: Sequence[dict | Any],
+        output: str,
+        mapper: Callable[[Any], dict] | None = None,
+    ) -> None:
+        """Print provided using format specified by output argument."""
+        output_to_renderer: dict[str, Callable[[Any], None]] = {
             "json": self.print_as_json,
             "yaml": self.print_as_yaml,
             "table": self.print_as_table,
@@ -96,17 +111,14 @@ class AirflowConsole(Console):
         }
         renderer = output_to_renderer.get(output)
         if not renderer:
-            raise ValueError(
-                f"Unknown formatter: {output}. Allowed options: {list(output_to_renderer.keys())}"
-            )
-
-        if not all(isinstance(d, dict) for d in data) and not mapper:
-            raise ValueError("To tabulate non-dictionary data you need to provide `mapper` function")
+            raise ValueError(f"Unknown formatter: {output}. Allowed options: {list(output_to_renderer)}")
 
         if mapper:
-            dict_data: List[Dict] = [mapper(d) for d in data]
-        else:
+            dict_data: Sequence[dict] = [mapper(d) for d in data]
+        elif is_data_sequence(data):
             dict_data = data
+        else:
+            raise ValueError("To tabulate non-dictionary data you need to provide `mapper` function")
         dict_data = [{k: self._normalize_data(v, output) for k, v in d.items()} for d in dict_data]
         renderer(dict_data)
 
@@ -125,6 +137,6 @@ class SimpleTable(Table):
         self.caption = kwargs.get("caption", " ")
 
     def add_column(self, *args, **kwargs) -> None:
-        """Add a column to the table. We use different default"""
+        """Add a column to the table. We use different default."""
         kwargs["overflow"] = kwargs.get("overflow")  # to avoid truncating
         super().add_column(*args, **kwargs)

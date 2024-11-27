@@ -14,16 +14,17 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
 import contextlib
 import importlib
-import io
 import logging
 import os
-import unittest
+from io import StringIO
+from unittest import mock
 
+import httpx
 import pytest
-from parameterized import parameterized
 from rich.console import Console
 
 from airflow.cli import cli_parser
@@ -31,7 +32,8 @@ from airflow.cli.commands import info_command
 from airflow.config_templates import airflow_local_settings
 from airflow.logging_config import configure_logging
 from airflow.version import version as airflow_version
-from tests.test_utils.config import conf_vars
+
+from tests_common.test_utils.config import conf_vars
 
 
 def capture_show_output(instance):
@@ -41,15 +43,16 @@ def capture_show_output(instance):
     return capture.get()
 
 
-class TestPiiAnonymizer(unittest.TestCase):
-    def setUp(self) -> None:
+class TestPiiAnonymizer:
+    def setup_method(self) -> None:
         self.instance = info_command.PiiAnonymizer()
 
     def test_should_remove_pii_from_path(self):
         home_path = os.path.expanduser("~/airflow/config")
         assert "${HOME}/airflow/config" == self.instance.process_path(home_path)
 
-    @parameterized.expand(
+    @pytest.mark.parametrize(
+        "before, after",
         [
             (
                 "postgresql+psycopg2://postgres:airflow@postgres/airflow",
@@ -67,7 +70,7 @@ class TestPiiAnonymizer(unittest.TestCase):
                 "postgresql+psycopg2://postgres/airflow",
                 "postgresql+psycopg2://postgres/airflow",
             ),
-        ]
+        ],
     )
     def test_should_remove_pii_from_url(self, before, after):
         assert after == self.instance.process_url(before)
@@ -76,7 +79,6 @@ class TestPiiAnonymizer(unittest.TestCase):
 class TestAirflowInfo:
     @classmethod
     def setup_class(cls):
-
         cls.parser = cli_parser.get_parser()
 
     @classmethod
@@ -96,9 +98,9 @@ class TestAirflowInfo:
             ("core", "dags_folder"): "TEST_DAGS_FOLDER",
             ("core", "plugins_folder"): "TEST_PLUGINS_FOLDER",
             ("logging", "base_log_folder"): "TEST_LOG_FOLDER",
-            ('core', 'sql_alchemy_conn'): 'postgresql+psycopg2://postgres:airflow@postgres/airflow',
-            ('logging', 'remote_logging'): 'True',
-            ('logging', 'remote_base_log_folder'): 's3://logs-name',
+            ("database", "sql_alchemy_conn"): "postgresql+psycopg2://postgres:airflow@postgres/airflow",
+            ("logging", "remote_logging"): "True",
+            ("logging", "remote_base_log_folder"): "s3://logs-name",
         }
     )
     def test_airflow_info(self):
@@ -107,61 +109,63 @@ class TestAirflowInfo:
 
         instance = info_command.AirflowInfo(info_command.NullAnonymizer())
         expected = {
-            'executor',
-            'version',
-            'task_logging_handler',
-            'plugins_folder',
-            'base_log_folder',
-            'remote_base_log_folder',
-            'dags_folder',
-            'sql_alchemy_conn',
+            "executor",
+            "version",
+            "task_logging_handler",
+            "plugins_folder",
+            "base_log_folder",
+            "remote_base_log_folder",
+            "dags_folder",
+            "sql_alchemy_conn",
         }
         assert self.unique_items(instance._airflow_info) == expected
 
     def test_system_info(self):
         instance = info_command.AirflowInfo(info_command.NullAnonymizer())
-        expected = {'uname', 'architecture', 'OS', 'python_location', 'locale', 'python_version'}
+        expected = {"uname", "architecture", "OS", "python_location", "locale", "python_version"}
         assert self.unique_items(instance._system_info) == expected
 
     def test_paths_info(self):
         instance = info_command.AirflowInfo(info_command.NullAnonymizer())
-        expected = {'airflow_on_path', 'airflow_home', 'system_path', 'python_path'}
+        expected = {"airflow_on_path", "airflow_home", "system_path", "python_path"}
         assert self.unique_items(instance._paths_info) == expected
 
     def test_tools_info(self):
         instance = info_command.AirflowInfo(info_command.NullAnonymizer())
         expected = {
-            'cloud_sql_proxy',
-            'gcloud',
-            'git',
-            'kubectl',
-            'mysql',
-            'psql',
-            'sqlite3',
-            'ssh',
+            "cloud_sql_proxy",
+            "gcloud",
+            "git",
+            "kubectl",
+            "mysql",
+            "psql",
+            "sqlite3",
+            "ssh",
         }
         assert self.unique_items(instance._tools_info) == expected
 
+    @pytest.mark.db_test
     @conf_vars(
         {
-            ('core', 'sql_alchemy_conn'): 'postgresql+psycopg2://postgres:airflow@postgres/airflow',
+            ("database", "sql_alchemy_conn"): "postgresql+psycopg2://postgres:airflow@postgres/airflow",
         }
     )
     def test_show_info(self):
-        with contextlib.redirect_stdout(io.StringIO()) as stdout:
+        with contextlib.redirect_stdout(StringIO()) as stdout:
             info_command.show_info(self.parser.parse_args(["info"]))
 
         output = stdout.getvalue()
         assert airflow_version in output
         assert "postgresql+psycopg2://postgres:airflow@postgres/airflow" in output
 
+    @pytest.mark.db_test
     @conf_vars(
         {
-            ('core', 'sql_alchemy_conn'): 'postgresql+psycopg2://postgres:airflow@postgres/airflow',
+            ("database", "sql_alchemy_conn"): "postgresql+psycopg2://postgres:airflow@postgres/airflow",
         }
     )
     def test_show_info_anonymize(self):
-        with contextlib.redirect_stdout(io.StringIO()) as stdout:
+        with contextlib.redirect_stdout(StringIO()) as stdout:
             info_command.show_info(self.parser.parse_args(["info", "--anonymize"]))
 
         output = stdout.getvalue()
@@ -169,29 +173,28 @@ class TestAirflowInfo:
         assert "postgresql+psycopg2://p...s:PASSWORD@postgres/airflow" in output
 
 
-@pytest.fixture()
+@pytest.fixture
 def setup_parser():
-    yield cli_parser.get_parser()
+    return cli_parser.get_parser()
 
 
 class TestInfoCommandMockHttpx:
     @conf_vars(
         {
-            ('core', 'sql_alchemy_conn'): 'postgresql+psycopg2://postgres:airflow@postgres/airflow',
+            ("database", "sql_alchemy_conn"): "postgresql+psycopg2://postgres:airflow@postgres/airflow",
         }
     )
-    def test_show_info_anonymize_fileio(self, httpx_mock, setup_parser):
-        httpx_mock.add_response(
-            url="https://file.io",
-            method="post",
-            json={
-                "success": True,
-                "key": "f9U3zs3I",
-                "link": "https://file.io/TEST",
-                "expiry": "14 days",
-            },
-            status_code=200,
-        )
-        with contextlib.redirect_stdout(io.StringIO()) as stdout:
-            info_command.show_info(setup_parser.parse_args(["info", "--file-io"]))
-        assert "https://file.io/TEST" in stdout.getvalue()
+    def test_show_info_anonymize_fileio(self, setup_parser, cleanup_providers_manager):
+        with mock.patch("airflow.cli.commands.info_command.httpx.post") as post:
+            post.return_value = httpx.Response(
+                status_code=200,
+                json={
+                    "success": True,
+                    "key": "f9U3zs3I",
+                    "link": "https://file.io/TEST",
+                    "expiry": "14 days",
+                },
+            )
+            with contextlib.redirect_stdout(StringIO()) as stdout:
+                info_command.show_info(setup_parser.parse_args(["info", "--file-io", "--anonymize"]))
+            assert "https://file.io/TEST" in stdout.getvalue()

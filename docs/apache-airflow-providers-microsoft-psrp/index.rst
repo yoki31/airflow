@@ -19,22 +19,32 @@
 ``apache-airflow-providers-microsoft-psrp``
 ===========================================
 
-Content
--------
 
 .. toctree::
+    :hidden:
+    :maxdepth: 1
+    :caption: Basics
+
+    Home <self>
+    Changelog <changelog>
+    Security <security>
+
+.. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Guides
 
     Operators <operators/index>
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: References
 
     Python API <_api/airflow/providers/microsoft/psrp/index>
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Resources
 
@@ -45,42 +55,44 @@ Content
 
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
     :caption: Commits
 
     Detailed list of commits <commits>
 
 
-Package apache-airflow-providers-microsoft-psrp
+apache-airflow-providers-microsoft-psrp package
 ------------------------------------------------------
 
 This package provides remote execution capabilities via the
 `PowerShell Remoting Protocol (PSRP)
-<https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-psrp/>`__.
+<https://docs.microsoft.com/openspecs/windows_protocols/ms-psrp/>`__.
 
 
-Release: 1.1.2
+Release: 2.8.0
 
 Provider package
 ----------------
 
-This is a provider package for ``microsoft.psrp`` provider. All classes for this provider package
-are in ``airflow.providers.microsoft.psrp`` python package.
+This package is for the ``microsoft.psrp`` provider.
+All classes for this package are included in the ``airflow.providers.microsoft.psrp`` python package.
 
 Installation
 ------------
 
-You can install this package on top of an existing Airflow 2.1+ installation via
-``pip install apache-airflow-providers-microsoft-psrp``
+You can install this package on top of an existing Airflow 2 installation via
+``pip install apache-airflow-providers-microsoft-psrp``.
+For the minimum Airflow version supported, see ``Requirements`` below.
 
-PIP requirements
-----------------
+Requirements
+------------
 
-=============  ==================
-PIP package    Version required
-=============  ==================
-``pypsrp``     ``>=0.8.0``
-``pypsrp``     ``>=0.8``
-=============  ==================
+The minimum Apache Airflow version supported by this provider package is ``2.8.0``.
 
-.. include:: ../../airflow/providers/microsoft/psrp/CHANGELOG.rst
+==================  ==================
+PIP package         Version required
+==================  ==================
+``apache-airflow``  ``>=2.8.0``
+``pypsrp``          ``>=0.8.0``
+==================  ==================

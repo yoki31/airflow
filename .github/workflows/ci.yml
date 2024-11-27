@@ -19,39 +19,28 @@
 name: Tests
 on:  # yamllint disable-line rule:truthy
   schedule:
-    - cron: '28 0 * * *'
+    - cron: '28 1,7,13,19 * * *'
   push:
-    branches: ['main', 'v[0-9]+-[0-9]+-test']
+    branches: ['v[0-9]+-[0-9]+-test']
   pull_request:
     branches: ['main', 'v[0-9]+-[0-9]+-test', 'v[0-9]+-[0-9]+-stable']
+  workflow_dispatch:
 permissions:
   # All other permissions are set to none
   contents: read
+  # Technically read access while waiting for images should be more than enough. However,
+  # there is a bug in GitHub Actions/Packages and in case private repositories are used, you get a permission
+  # denied error when attempting to just pull private image, changing the token permission to write solves the
+  # issue. This is not dangerous, because if it is for "apache/airflow", only maintainers can push ci.yml
+  # changes. If it is for a fork, then the token is read-only anyway.
+  packages: write
 env:
-  MOUNT_SELECTED_LOCAL_SOURCES: "false"
-  FORCE_ANSWER_TO_QUESTIONS: "yes"
-  CHECK_IMAGE_FOR_REBUILD: "true"
-  SKIP_CHECK_REMOTE_IMAGE: "true"
-  DEBIAN_VERSION: "bullseye"
-  DB_RESET: "true"
-  VERBOSE: "true"
-  DOCKER_CACHE: "pulled"
   GITHUB_REPOSITORY: ${{ github.repository }}
-  GITHUB_USERNAME: ${{ github.actor }}
-  # You can override CONSTRAINTS_GITHUB_REPOSITORY by setting secret in your repo but by default the
-  # Airflow one is going to be used
-  CONSTRAINTS_GITHUB_REPOSITORY: >-
-    ${{ secrets.CONSTRAINTS_GITHUB_REPOSITORY != '' &&
-        secrets.CONSTRAINTS_GITHUB_REPOSITORY || 'apache/airflow' }}
-  # In builds from forks, this token is read-only. For scheduler/direct push it is WRITE one
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  # In builds from forks, this token is empty, and this is good because such builds do not even try
-  # to push images to the registry.
-  GITHUB_REGISTRY_PULL_IMAGE_TAG: "${{ github.event.pull_request.head.sha || github.sha }}"
-  GITHUB_REGISTRY_PUSH_IMAGE_TAG: "latest"
-  INSTALL_PROVIDERS_FROM_SOURCES: "true"
-  AIRFLOW_LOGIN_TO_GITHUB_REGISTRY: "true"
-  ENABLE_TEST_COVERAGE: "${{ github.event_name == 'push' }}"
+  GITHUB_USERNAME: ${{ github.actor }}
+  IMAGE_TAG: "${{ github.event.pull_request.head.sha || github.sha }}"
+  SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+  VERBOSE: "true"
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
@@ -61,1362 +50,719 @@ jobs:
 
   build-info:
     name: "Build info"
-    # The runs-on cannot refer to env. or secrets. context, so we have no
-    # option but to specify a hard-coded list here. This is "safe", as the list
-    # is checked again by the runner using it's own list, so a PR author cannot
-    # change this and get access to our self-hosted runners
-    #
-    # When changing this list, ensure that it is kept in sync with the
-    # /runners/apache/airflow/configOverlay
-    # parameter in AWS SSM ParameterStore (which is what the runner uses)
-    # and restart the self-hosted runners.
-    #
-    # This list of committers can be generated with:
-    #   https://github.com/apache/airflow-ci-infra/blob/main/scripts/list_committers
-    runs-on: >-
-      ${{ (
-        (
-          github.event_name == 'push' ||
-          github.event_name == 'schedule' ||
-          contains(fromJSON('[
-            "BasPH",
-            "Fokko",
-            "KevinYang21",
-            "XD-DENG",
-            "aijamalnk",
-            "alexvanboxel",
-            "aoen",
-            "artwr",
-            "ashb",
-            "bbovenzi",
-            "bolkedebruin",
-            "criccomini",
-            "dimberman",
-            "dstandish",
-            "eladkal",
-            "ephraimbuddy",
-            "feluelle",
-            "feng-tao",
-            "houqp",
-            "jedcunningham",
-            "jgao54",
-            "jghoman",
-            "jhtimmins",
-            "jmcarp",
-            "kaxil",
-            "leahecole",
-            "mik-laj",
-            "milton0825",
-            "mistercrunch",
-            "msumit",
-            "potiuk",
-            "r39132",
-            "ryanahamilton",
-            "ryw",
-            "saguziel",
-            "sekikn",
-            "turbaszek",
-            "uranusjr",
-            "vikramkoka",
-            "xinbinhuang",
-            "yuqian90",
-            "zhongjiajie"
-          ]'), github.event.pull_request.user.login)
-        ) && github.repository == 'apache/airflow'
-      ) && 'self-hosted' || 'ubuntu-20.04' }}
+    # At build-info stage we do not yet have outputs so we need to hard-code the runs-on to public runners
+    runs-on: ["ubuntu-22.04"]
     env:
       GITHUB_CONTEXT: ${{ toJson(github) }}
     outputs:
-      upgradeToNewerDependencies: ${{ steps.selective-checks.outputs.upgrade-to-newer-dependencies }}
-      pythonVersions: ${{ steps.selective-checks.outputs.python-versions }}
-      pythonVersionsListAsString: ${{ steps.selective-checks.outputs.python-versions-list-as-string }}
-      defaultPythonVersion: ${{ steps.selective-checks.outputs.default-python-version }}
-      kubernetesVersions: ${{ steps.selective-checks.outputs.kubernetes-versions }}
-      kubernetesVersionsListAsString: ${{ steps.selective-checks.outputs.kubernetes-versions-list-as-string }}
-      defaultKubernetesVersion: ${{ steps.selective-checks.outputs.default-kubernetes-version }}
-      kubernetesModes: ${{ steps.selective-checks.outputs.kubernetes-modes }}
-      defaultKubernetesMode: ${{ steps.selective-checks.outputs.default-kubernetes-mode }}
-      postgresVersions: ${{ steps.selective-checks.outputs.postgres-versions }}
-      defaultPostgresVersion: ${{ steps.selective-checks.outputs.default-postgres-version }}
-      mysqlVersions: ${{ steps.selective-checks.outputs.mysql-versions }}
-      mssqlVersions: ${{ steps.selective-checks.outputs.mssql-versions }}
-      defaultMySQLVersion: ${{ steps.selective-checks.outputs.default-mysql-version }}
-      helmVersions: ${{ steps.selective-checks.outputs.helm-versions }}
-      defaultHelmVersion: ${{ steps.selective-checks.outputs.default-helm-version }}
-      kindVersions: ${{ steps.selective-checks.outputs.kind-versions }}
-      defaultKindVersion: ${{ steps.selective-checks.outputs.default-kind-version }}
-      testTypes: ${{ steps.selective-checks.outputs.test-types }}
-      postgresExclude: ${{ steps.selective-checks.outputs.postgres-exclude }}
-      mysqlExclude: ${{ steps.selective-checks.outputs.mysql-exclude }}
-      mssqlExclude: ${{ steps.selective-checks.outputs.mssql-exclude }}
-      sqliteExclude: ${{ steps.selective-checks.outputs.sqlite-exclude }}
+      all-python-versions-list-as-string: >-
+        ${{ steps.selective-checks.outputs.all-python-versions-list-as-string }}
+      basic-checks-only: ${{ steps.selective-checks.outputs.basic-checks-only }}
+      build-job-description: ${{ steps.source-run-info.outputs.build-job-description }}
+      canary-run: ${{ steps.source-run-info.outputs.canary-run }}
+      chicken-egg-providers: ${{ steps.selective-checks.outputs.chicken-egg-providers }}
+      ci-image-build: ${{ steps.selective-checks.outputs.ci-image-build }}
+      core-test-types-list-as-string: >-
+        ${{ steps.selective-checks.outputs.core-test-types-list-as-string }}
+      debug-resources: ${{ steps.selective-checks.outputs.debug-resources }}
+      default-branch: ${{ steps.selective-checks.outputs.default-branch }}
+      default-constraints-branch: ${{ steps.selective-checks.outputs.default-constraints-branch }}
+      default-helm-version: ${{ steps.selective-checks.outputs.default-helm-version }}
+      default-kind-version: ${{ steps.selective-checks.outputs.default-kind-version }}
+      default-kubernetes-version: ${{ steps.selective-checks.outputs.default-kubernetes-version }}
+      default-mysql-version: ${{ steps.selective-checks.outputs.default-mysql-version }}
+      default-postgres-version: ${{ steps.selective-checks.outputs.default-postgres-version }}
+      default-python-version: ${{ steps.selective-checks.outputs.default-python-version }}
+      disable-airflow-repo-cache: ${{ steps.selective-checks.outputs.disable-airflow-repo-cache }}
+      docker-cache: ${{ steps.selective-checks.outputs.docker-cache }}
+      docs-build: ${{ steps.selective-checks.outputs.docs-build }}
+      docs-list-as-string: ${{ steps.selective-checks.outputs.docs-list-as-string }}
+      excluded-providers-as-string: ${{ steps.selective-checks.outputs.excluded-providers-as-string }}
+      force-pip: ${{ steps.selective-checks.outputs.force-pip }}
+      full-tests-needed: ${{ steps.selective-checks.outputs.full-tests-needed }}
+      has-migrations: ${{ steps.selective-checks.outputs.has-migrations }}
+      helm-test-packages: ${{ steps.selective-checks.outputs.helm-test-packages }}
+      image-tag: ${{ github.event.pull_request.head.sha || github.sha }}
+      in-workflow-build: ${{ steps.source-run-info.outputs.in-workflow-build }}
+      include-success-outputs: ${{ steps.selective-checks.outputs.include-success-outputs }}
+      individual-providers-test-types-list-as-string: >-
+        ${{ steps.selective-checks.outputs.individual-providers-test-types-list-as-string }}
+      is-airflow-runner: ${{ steps.selective-checks.outputs.is-airflow-runner }}
+      is-amd-runner: ${{ steps.selective-checks.outputs.is-amd-runner }}
+      is-arm-runner: ${{ steps.selective-checks.outputs.is-arm-runner }}
+      is-k8s-runner: ${{ steps.selective-checks.outputs.is-k8s-runner }}
+      is-self-hosted-runner: ${{ steps.selective-checks.outputs.is-self-hosted-runner }}
+      is-vm-runner: ${{ steps.selective-checks.outputs.is-vm-runner }}
+      kubernetes-combos-list-as-string: >-
+        ${{ steps.selective-checks.outputs.kubernetes-combos-list-as-string }}
+      kubernetes-versions-list-as-string: >-
+        ${{ steps.selective-checks.outputs.kubernetes-versions-list-as-string }}
+      latest-versions-only: ${{ steps.selective-checks.outputs.latest-versions-only }}
+      mypy-checks: ${{ steps.selective-checks.outputs.mypy-checks }}
+      mysql-exclude: ${{ steps.selective-checks.outputs.mysql-exclude }}
+      mysql-versions: ${{ steps.selective-checks.outputs.mysql-versions }}
+      needs-api-codegen: ${{ steps.selective-checks.outputs.needs-api-codegen }}
+      needs-api-tests: ${{ steps.selective-checks.outputs.needs-api-tests }}
+      needs-helm-tests: ${{ steps.selective-checks.outputs.needs-helm-tests }}
+      needs-mypy: ${{ steps.selective-checks.outputs.needs-mypy }}
+      only-new-ui-files: ${{ steps.selective-checks.outputs.only-new-ui-files }}
+      postgres-exclude: ${{ steps.selective-checks.outputs.postgres-exclude }}
+      postgres-versions: ${{ steps.selective-checks.outputs.postgres-versions }}
+      prod-image-build: ${{ steps.selective-checks.outputs.prod-image-build }}
+      # yamllint disable rule:line-length
+      providers-compatibility-tests-matrix: ${{ steps.selective-checks.outputs.providers-compatibility-tests-matrix }}
+      providers-test-types-list-as-string: >-
+        ${{ steps.selective-checks.outputs.providers-test-types-list-as-string }}
+      pull-request-labels: ${{ steps.source-run-info.outputs.pr-labels }}
+      python-versions-list-as-string: ${{ steps.selective-checks.outputs.python-versions-list-as-string }}
+      python-versions: ${{ steps.selective-checks.outputs.python-versions }}
+      run-amazon-tests: ${{ steps.selective-checks.outputs.run-amazon-tests }}
+      run-coverage: ${{ steps.source-run-info.outputs.run-coverage }}
+      run-kubernetes-tests: ${{ steps.selective-checks.outputs.run-kubernetes-tests }}
+      run-task-sdk-tests: ${{ steps.selective-checks.outputs.run-task-sdk-tests }}
+      run-system-tests: ${{ steps.selective-checks.outputs.run-system-tests }}
       run-tests: ${{ steps.selective-checks.outputs.run-tests }}
       run-ui-tests: ${{ steps.selective-checks.outputs.run-ui-tests }}
       run-www-tests: ${{ steps.selective-checks.outputs.run-www-tests }}
-      run-kubernetes-tests: ${{ steps.selective-checks.outputs.run-kubernetes-tests }}
-      basic-checks-only: ${{ steps.selective-checks.outputs.basic-checks-only }}
-      image-build: ${{ steps.selective-checks.outputs.image-build }}
-      docs-build: ${{ steps.selective-checks.outputs.docs-build }}
-      needs-helm-tests: ${{ steps.selective-checks.outputs.needs-helm-tests }}
-      needs-api-tests: ${{ steps.selective-checks.outputs.needs-api-tests }}
-      needs-api-codegen: ${{ steps.selective-checks.outputs.needs-api-codegen }}
-      default-branch: ${{ steps.selective-checks.outputs.default-branch }}
-      pullRequestNumber: ${{ steps.source-run-info.outputs.pullRequestNumber }}
-      pullRequestLabels: ${{ steps.source-run-info.outputs.pullRequestLabels }}
-      runsOn: ${{ steps.set-runs-on.outputs.runsOn }}
-      runCoverage: ${{ steps.set-run-coverage.outputs.runCoverage }}
+      runs-on-as-json-default: ${{ steps.selective-checks.outputs.runs-on-as-json-default }}
+      runs-on-as-json-docs-build: ${{ steps.selective-checks.outputs.runs-on-as-json-docs-build }}
+      runs-on-as-json-public: ${{ steps.selective-checks.outputs.runs-on-as-json-public }}
+      runs-on-as-json-self-hosted-asf: ${{ steps.selective-checks.outputs.runs-on-as-json-self-hosted-asf }}
+      runs-on-as-json-self-hosted: ${{ steps.selective-checks.outputs.runs-on-as-json-self-hosted }}
+      selected-providers-list-as-string: >-
+        ${{ steps.selective-checks.outputs.selected-providers-list-as-string }}
+      skip-pre-commits: ${{ steps.selective-checks.outputs.skip-pre-commits }}
+      skip-providers-tests: ${{ steps.selective-checks.outputs.skip-providers-tests }}
+      source-head-repo: ${{ steps.source-run-info.outputs.source-head-repo }}
+      sqlite-exclude: ${{ steps.selective-checks.outputs.sqlite-exclude }}
+      test-groups: ${{ steps.selective-checks.outputs.test-groups }}
+      testable-core-integrations: ${{ steps.selective-checks.outputs.testable-core-integrations }}
+      testable-providers-integrations: ${{ steps.selective-checks.outputs.testable-providers-integrations }}
+      upgrade-to-newer-dependencies: ${{ steps.selective-checks.outputs.upgrade-to-newer-dependencies }}
     steps:
+      - name: "Cleanup repo"
+        shell: bash
+        run: docker run -v "${GITHUB_WORKSPACE}:/workspace" -u 0:0 bash -c "rm -rf /workspace/*"
       - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
-          submodules: recursive
-      - name: "Get information about the PR"
-        uses: ./.github/actions/get-workflow-origin
-        id: source-run-info
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: "Cleanup docker"
+        run: ./scripts/ci/cleanup_docker.sh
       - name: Fetch incoming commit ${{ github.sha }} with its parent
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           fetch-depth: 2
           persist-credentials: false
-        if: github.event_name  == 'pull_request'
+      - name: "Install Breeze"
+        uses: ./.github/actions/breeze
+      - name: "Get information about the Workflow"
+        id: source-run-info
+        run: breeze ci get-workflow-info 2>> ${GITHUB_OUTPUT}
       - name: Selective checks
         id: selective-checks
         env:
-          PR_LABELS: "${{ steps.source-run-info.outputs.pullRequestLabels }}"
-        run: |
-          if [[ ${GITHUB_EVENT_NAME} == "pull_request" ]]; then
-            # Run selective checks
-            ./scripts/ci/selective_ci_checks.sh "${GITHUB_SHA}"
-          else
-            # Run all checks
-            ./scripts/ci/selective_ci_checks.sh
-          fi
-      # Avoid having to specify the runs-on logic every time. We use the custom
-      # env var AIRFLOW_SELF_HOSTED_RUNNER set only on our runners, but never
-      # on the public runners
-      - name: Set runs-on
-        id: set-runs-on
+          PR_LABELS: "${{ steps.source-run-info.outputs.pr-labels }}"
+          COMMIT_REF: "${{ github.sha }}"
+          VERBOSE: "false"
+        run: breeze ci selective-check 2>> ${GITHUB_OUTPUT}
+      - name: env
+        run: printenv
         env:
-          PR_LABELS: "${{ steps.source-run-info.outputs.pullRequestLabels }}"
-        run: |
-          if [[ ${PR_LABELS=} == *"use public runners"* ]]; then
-            echo "Forcing running on Public Runners via `use public runners` label"
-            echo "::set-output name=runsOn::\"ubuntu-20.04\""
-          elif [[ ${AIRFLOW_SELF_HOSTED_RUNNER} == "" ]]; then
-            echo "Regular PR running with Public Runner"
-            echo "::set-output name=runsOn::\"ubuntu-20.04\""
-          else
-            echo "Maintainer or main run running with self-hosted runner"
-            echo "::set-output name=runsOn::\"self-hosted\""
-          fi
-      # Avoid having to specify the coverage logic every time.
-      - name: Set run coverage
-        id: set-run-coverage
-        run: |
-          echo "::set-output name=runCoverage::true"
-        if: >
-          github.ref == 'refs/heads/main' && github.repository == 'apache/airflow' &&
-          github.event_name == 'push' &&
-          steps.selective-checks.outputs.default-branch == 'main'
+          PR_LABELS: ${{ steps.source-run-info.outputs.pr-labels }}
+          GITHUB_CONTEXT: ${{ toJson(github) }}
 
-  run-new-breeze-tests:
-    timeout-minutes: 10
-    name: Breeze2 tests
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
+  basic-tests:
+    name: "Basic tests"
     needs: [build-info]
-    steps:
-      - uses: actions/checkout@v2
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@v2
-        with:
-          python-version: ${{ needs.build-info.outputs.defaultPythonVersion }}
-          cache: 'pip'
-          cache-dependency-path: ./dev/breeze/setup*
-      - run: python -m pip install --editable ./dev/breeze/
-      - run: python -m pytest ./dev/breeze/ -n auto --color=yes
+    uses: ./.github/workflows/basic-tests.yml
+    with:
+      runs-on-as-json-public: ${{ needs.build-info.outputs.runs-on-as-json-public }}
+      run-ui-tests: ${{needs.build-info.outputs.run-ui-tests}}
+      run-www-tests: ${{needs.build-info.outputs.run-www-tests}}
+      needs-api-codegen: ${{needs.build-info.outputs.needs-api-codegen}}
+      default-python-version: ${{needs.build-info.outputs.default-python-version}}
+      basic-checks-only: ${{needs.build-info.outputs.basic-checks-only}}
+      skip-pre-commits: ${{needs.build-info.outputs.skip-pre-commits}}
+      canary-run: ${{needs.build-info.outputs.canary-run}}
+      latest-versions-only: ${{needs.build-info.outputs.latest-versions-only}}
+      enable-aip-44: "false"
 
-  tests-ui:
-    timeout-minutes: 10
-    name: React UI tests
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
+  build-ci-images:
+    name: >
+      ${{ needs.build-info.outputs.in-workflow-build == 'true' && 'Build' || 'Skip building' }}
+      CI images in-workflow
     needs: [build-info]
-    if: needs.build-info.outputs.run-ui-tests == 'true'
-    steps:
-      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
-        with:
-          persist-credentials: false
-      - name: "Setup node"
-        uses: actions/setup-node@v2
-        with:
-          node-version: 14
-      - name: "Cache eslint"
-        uses: actions/cache@v2
-        with:
-          path: 'airflow/ui/node_modules'
-          key: ${{ runner.os }}-ui-node-modules-${{ hashFiles('airflow/ui/**/yarn.lock') }}
-      - run: yarn --cwd airflow/ui/ install --frozen-lockfile --non-interactive
-      - run: yarn --cwd airflow/ui/ run test
+    uses: ./.github/workflows/ci-image-build.yml
+    permissions:
+      contents: read
+      # This write is only given here for `push` events from "apache/airflow" repo. It is not given for PRs
+      # from forks. This is to prevent malicious PRs from creating images in the "apache/airflow" repo.
+      # For regular build for PRS this "build-prod-images" workflow will be skipped anyway by the
+      # "in-workflow-build" condition
+      packages: write
+    secrets: inherit
+    with:
+      runs-on-as-json-public: ${{ needs.build-info.outputs.runs-on-as-json-public }}
+      runs-on-as-json-self-hosted: ${{ needs.build-info.outputs.runs-on-as-json-self-hosted }}
+      do-build: ${{ needs.build-info.outputs.in-workflow-build }}
+      image-tag: ${{ needs.build-info.outputs.image-tag }}
+      platform: "linux/amd64"
+      python-versions: ${{ needs.build-info.outputs.python-versions }}
+      branch: ${{ needs.build-info.outputs.default-branch }}
+      use-uv: ${{ needs.build-info.outputs.force-pip == 'true' && 'false' || 'true' }}
+      upgrade-to-newer-dependencies: ${{ needs.build-info.outputs.upgrade-to-newer-dependencies }}
+      constraints-branch: ${{ needs.build-info.outputs.default-constraints-branch }}
+      docker-cache: ${{ needs.build-info.outputs.docker-cache }}
+      disable-airflow-repo-cache: ${{ needs.build-info.outputs.disable-airflow-repo-cache }}
 
-  tests-www:
-    timeout-minutes: 10
-    name: React WWW tests
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-    needs: [build-info]
-    if: needs.build-info.outputs.run-www-tests == 'true'
-    steps:
-      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
-        with:
-          persist-credentials: false
-      - name: "Setup node"
-        uses: actions/setup-node@v2
-        with:
-          node-version: 14
-      - name: "Cache eslint"
-        uses: actions/cache@v2
-        with:
-          path: 'airflow/www/node_modules'
-          key: ${{ runner.os }}-ui-node-modules-${{ hashFiles('airflow/ui/**/yarn.lock') }}
-      - run: yarn --cwd airflow/www/ install --frozen-lockfile --non-interactive
-      - run: yarn --cwd airflow/www/ run test
-
-
-  test-openapi-client-generation:
-    timeout-minutes: 10
-    name: "Test OpenAPI client generation"
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-    needs: [build-info]
-    if: needs.build-info.outputs.needs-api-codegen == 'true'
-    steps:
-      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
-        with:
-          fetch-depth: 2
-          persist-credentials: false
-      - name: "Generate client codegen diff"
-        run: ./scripts/ci/openapi/client_codegen_diff.sh
-
-  test-examples-of-prod-image-building:
-    timeout-minutes: 60
-    name: "Test examples of production image building"
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-    needs: [build-info]
-    if: needs.build-info.outputs.image-build == 'true'
-    steps:
-      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
-        with:
-          fetch-depth: 2
-          persist-credentials: false
-      - name: "Setup python"
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ needs.build-info.outputs.defaultPythonVersion }}
-          cache: 'pip'
-          cache-dependency-path: ./dev/breeze/setup*
-      - run: python -m pip install --editable ./dev/breeze/
-      - name: "Free space"
-        run: airflow-freespace
-      - name: "Cache virtualenv environment"
-        uses: actions/cache@v2
-        with:
-          path: '.build/.docker_venv'
-          key: ${{ runner.os }}-docker-venv-${{ hashFiles('scripts/ci/images/ci_run_docker_tests.py') }}
-      - name: "Test examples of PROD image building"
-        working-directory: docs/docker-stack/docker-examples
-        run: >
-          python -m pytest ../../../docker_tests/test_examples_of_prod_image_building.py
-          -n auto --color=yes
-
-  test-docker-compose-quick-start:
-    timeout-minutes: 60
-    name: "Test docker-compose quick start"
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-    needs: [build-info, prod-images]
-    if: needs.build-info.outputs.image-build == 'true'
-    steps:
-      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
-        with:
-          fetch-depth: 2
-          persist-credentials: false
-      - name: "Setup python"
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ needs.build-info.outputs.defaultPythonVersion }}
-          cache: 'pip'
-          cache-dependency-path: ./dev/breeze/setup*
-      - run: python -m pip install --editable ./dev/breeze/
-      - name: "Free space"
-        run: airflow-freespace
-      - name: "Cache virtualenv environment"
-        uses: actions/cache@v2
-        with:
-          path: '.build/.docker_venv'
-          key: ${{ runner.os }}-docker-venv-${{ hashFiles('scripts/ci/images/ci_run_docker_tests.py') }}
-      - name: "Test docker-compose quick start"
-        run: ./scripts/ci/images/ci_run_docker_compose_quick_start_test.sh
-
-  ci-images:
+  wait-for-ci-images:
     timeout-minutes: 120
     name: "Wait for CI images"
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-    needs: [build-info]
-    if: needs.build-info.outputs.image-build == 'true'
+    runs-on: ${{ fromJSON(needs.build-info.outputs.runs-on-as-json-public) }}
+    needs: [build-info, build-ci-images]
+    if: needs.build-info.outputs.ci-image-build == 'true'
     env:
-      RUNS_ON: ${{ fromJson(needs.build-info.outputs.runsOn) }}
       BACKEND: sqlite
-      UPGRADE_TO_NEWER_DEPENDENCIES: ${{ needs.build-info.outputs.upgradeToNewerDependencies }}
+      # Force more parallelism for pull even on public images
+      PARALLELISM: 6
+      INCLUDE_SUCCESS_OUTPUTS: "${{needs.build-info.outputs.include-success-outputs}}"
     steps:
+      - name: "Cleanup repo"
+        shell: bash
+        run: docker run -v "${GITHUB_WORKSPACE}:/workspace" -u 0:0 bash -c "rm -rf /workspace/*"
+        if: needs.build-info.outputs.in-workflow-build == 'false'
       - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: "Setup python"
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ needs.build-info.outputs.defaultPythonVersion }}
-          cache: 'pip'
-          cache-dependency-path: ./dev/breeze/setup*
-      - run: python -m pip install --editable ./dev/breeze/
-      - name: "Free space"
-        run: airflow-freespace
-      - name: "Cache virtualenv environment"
-        uses: actions/cache@v2
-        with:
-          path: '.build/.docker_venv'
-          key: ${{ runner.os }}-docker-venv-${{ hashFiles('scripts/ci/images/ci_run_docker_tests.py') }}
-      - name: >
-          Wait for CI images
-          ${{ needs.build-info.outputs.pythonVersions }}:${{ env.GITHUB_REGISTRY_PULL_IMAGE_TAG }}
+        if: needs.build-info.outputs.in-workflow-build == 'false'
+      - name: "Cleanup docker"
+        run: ./scripts/ci/cleanup_docker.sh
+        if: needs.build-info.outputs.in-workflow-build == 'false'
+      - name: "Install Breeze"
+        uses: ./.github/actions/breeze
+        if: needs.build-info.outputs.in-workflow-build == 'false'
+      - name: Login to ghcr.io
+        run: echo "${{ env.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        if: needs.build-info.outputs.in-workflow-build == 'false'
+      - name: Wait for CI images ${{ env.PYTHON_VERSIONS }}:${{ needs.build-info.outputs.image-tag }}
         id: wait-for-images
-        # We wait for the images to be available either from the build-images workflow
-        # We are utilising single job to wait for all images because this job merely waits
-        # for the images to be available and run tests with the images.
-        run: ./scripts/ci/images/ci_wait_for_and_verify_all_ci_images.sh
+        run: breeze ci-image pull --run-in-parallel --wait-for-image --tag-as-latest
         env:
-          CURRENT_PYTHON_MAJOR_MINOR_VERSIONS_AS_STRING: >
-            ${{needs.build-info.outputs.pythonVersionsListAsString}}
-          VERIFY_IMAGE: "true"
-          PR_LABELS: "${{ needs.build-info.outputs.pullRequestLabels }}"
+          PYTHON_VERSIONS: ${{ needs.build-info.outputs.python-versions-list-as-string }}
+          DEBUG_RESOURCES: ${{needs.build-info.outputs.debug-resources}}
+        if: needs.build-info.outputs.in-workflow-build == 'false'
 
-  static-checks:
-    timeout-minutes: 30
-    name: "Static checks"
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-    needs: [build-info, ci-images]
-    env:
-      RUNS_ON: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-      MOUNT_SELECTED_LOCAL_SOURCES: "true"
-      PYTHON_MAJOR_MINOR_VERSION: ${{needs.build-info.outputs.defaultPythonVersion}}
-    if: needs.build-info.outputs.basic-checks-only == 'false'
-    steps:
-      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
-        with:
-          persist-credentials: false
-      - name: "Setup python"
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ needs.build-info.outputs.defaultPythonVersion }}
-          cache: 'pip'
-          cache-dependency-path: ./dev/breeze/setup*
-      - run: python -m pip install --editable ./dev/breeze/
-      - name: "Free space"
-        run: airflow-freespace
-      - name: "Pull CI image ${{env.PYTHON_MAJOR_MINOR_VERSION}}:${{ env.GITHUB_REGISTRY_PULL_IMAGE_TAG }}"
-        run: ./scripts/ci/images/ci_pull_ci_image_on_ci.sh
-      - name: "Get Python version"
-        run: "echo \"::set-output name=host-python-version::$(python -c
- 'import platform; print(platform.python_version())')\""
-        id: host-python-version
-      - name: "Cache pre-commit local-installation"
-        uses: actions/cache@v2
-        with:
-          path: ~/.local
-          key: "pre-commit-local-installation-${{steps.host-python-version.outputs.host-python-version}}-\
-${{ hashFiles('setup.py', 'setup.cfg') }}"
-          restore-keys: "\
-pre-commit-local-installation-${{steps.host-python-version.outputs.host-python-version}}-"
-      - name: "Cache pre-commit envs"
-        uses: actions/cache@v2
-        with:
-          path: ~/.cache/pre-commit
-          key: "pre-commit-${{steps.host-python-version.outputs.host-python-version}}-\
-${{ hashFiles('.pre-commit-config.yaml') }}"
-          restore-keys: pre-commit-${{steps.host-python-version.outputs.host-python-version}}
+  additional-ci-image-checks:
+    name: "Additional CI image checks"
+    needs: [build-info, wait-for-ci-images]
+    uses: ./.github/workflows/additional-ci-image-checks.yml
+    if: needs.build-info.outputs.canary-run == 'true'
+    with:
+      runs-on-as-json-default: ${{ needs.build-info.outputs.runs-on-as-json-default }}
+      runs-on-as-json-public: ${{ needs.build-info.outputs.runs-on-as-json-public }}
+      runs-on-as-json-self-hosted: ${{ needs.build-info.outputs.runs-on-as-json-self-hosted }}
+      image-tag: ${{ needs.build-info.outputs.image-tag }}
+      python-versions: ${{ needs.build-info.outputs.python-versions }}
+      branch: ${{ needs.build-info.outputs.default-branch }}
+      constraints-branch: ${{ needs.build-info.outputs.default-constraints-branch }}
+      default-python-version: ${{ needs.build-info.outputs.default-python-version }}
+      upgrade-to-newer-dependencies: ${{ needs.build-info.outputs.upgrade-to-newer-dependencies }}
+      skip-pre-commits: ${{ needs.build-info.outputs.skip-pre-commits }}
+      docker-cache: ${{ needs.build-info.outputs.docker-cache }}
+      disable-airflow-repo-cache: ${{ needs.build-info.outputs.disable-airflow-repo-cache }}
+      canary-run: ${{ needs.build-info.outputs.canary-run }}
+      latest-versions-only: ${{ needs.build-info.outputs.latest-versions-only }}
+      include-success-outputs: ${{ needs.build-info.outputs.include-success-outputs }}
+      debug-resources: ${{ needs.build-info.outputs.debug-resources }}
+      use-uv: ${{ needs.build-info.outputs.force-pip == 'true' && 'false' || 'true' }}
 
-      - name: "Cache eslint"
-        uses: actions/cache@v2
-        with:
-          path: 'airflow/ui/node_modules'
-          key: ${{ runner.os }}-ui-node-modules-${{ hashFiles('airflow/ui/**/yarn.lock') }}
-      - name: "Static checks"
-        run: ./scripts/ci/static_checks/run_static_checks.sh
-        env:
-          VERBOSE: false
-          SKIP: "identity"
-          COLUMNS: 250
 
-  # Those checks are run if no image needs to be built for checks. This is for simple changes that
-  # Do not touch any of the python code or any of the important files that might require building
-  # The CI Docker image and they can be run entirely using the pre-commit virtual environments on host
-  static-checks-basic-checks-only:
-    timeout-minutes: 30
-    name: "Static checks: basic checks only"
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-    needs: [build-info]
-    env:
-      RUNS_ON: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-      SKIP: "build,mypy,flake8,identity"
-      MOUNT_SELECTED_LOCAL_SOURCES: "true"
-      PYTHON_MAJOR_MINOR_VERSION: ${{needs.build-info.outputs.defaultPythonVersion}}
-    if: needs.build-info.outputs.basic-checks-only == 'true'
-    steps:
-      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
-        with:
-          persist-credentials: false
-      - name: "Setup python"
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ needs.build-info.outputs.defaultPythonVersion }}
-      - name: >
-          Fetch incoming commit ${{ github.sha }} with its parent
-        uses: actions/checkout@v2
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 2
-          persist-credentials: false
-      - name: "Get Python version"
-        run: "echo \"::set-output name=host-python-version::$(python -c
- 'import platform; print(platform.python_version())')\""
-        id: host-python-version
-      - name: "Cache pre-commit local-installation"
-        uses: actions/cache@v2
-        with:
-          path: ~/.local
-          key: "pre-commit-local-installation-${{steps.host-python-version.outputs.host-python-version}}-\
-${{ hashFiles('setup.py', 'setup.cfg') }}"
-          restore-keys: "\
-pre-commit-local-installation-${{steps.host-python-version.outputs.host-python-version}}-"
-      - name: "Cache pre-commit envs"
-        uses: actions/cache@v2
-        with:
-          path: ~/.cache/pre-commit
-          key: "pre-commit-basic-${{steps.host-python-version.outputs.host-python-version}}-\
-${{ hashFiles('.pre-commit-config.yaml') }}"
-          restore-keys: pre-commit-basic-${{steps.host-python-version.outputs.host-python-version}}
-      - name: "Static checks: basic checks only"
-        run: ./scripts/ci/static_checks/run_basic_static_checks.sh "${{ github.sha }}"
-        env:
-          VERBOSE: false
-  docs:
-    timeout-minutes: 45
-    name: "Build docs"
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-    needs: [build-info, ci-images]
-    if: needs.build-info.outputs.docs-build == 'true'
-    env:
-      RUNS_ON: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-    steps:
-      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
-        with:
-          persist-credentials: false
-          submodules: recursive
-      - uses: actions/setup-python@v2
-        with:
-          python-version: ${{needs.build-info.outputs.defaultPythonVersion}}
-          cache: 'pip'
-          cache-dependency-path: ./dev/breeze/setup*
-      - run: python -m pip install --editable ./dev/breeze/
-      - name: "Free space"
-        run: airflow-freespace
-      - name: "Pull CI image ${{env.PYTHON_MAJOR_MINOR_VERSION}}:${{ env.GITHUB_REGISTRY_PULL_IMAGE_TAG }}"
-        run: ./scripts/ci/images/ci_pull_ci_image_on_ci.sh
-      - name: "Fetch inventory versions"
-        run: ./scripts/ci/docs/ci_docs_prepare.sh
-      - uses: actions/cache@v2
-        id: cache-doc-inventories
-        with:
-          path: ./docs/_inventory_cache/
-          key: docs-inventory-v1-${{ hashFiles('constraints.txt') }}
-          restore-keys: |
-            docs-inventory-${{ hashFiles('constraints.txt') }}
-            docs-inventory-
-      - name: "Build docs"
-        run: ./scripts/ci/docs/ci_docs.sh
-      - name: Configure AWS credentials
-        uses: ./.github/actions/configure-aws-credentials
-        if: >
-          github.ref == 'refs/heads/main' && github.repository == 'apache/airflow' &&
-          github.event_name == 'push'
-        with:
-          aws-access-key-id: ${{ secrets.DOCS_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.DOCS_AWS_SECRET_ACCESS_KEY }}
-          aws-region: eu-central-1
-      - name: "Upload documentation to AWS S3"
-        if: >
-          github.ref == 'refs/heads/main' && github.repository == 'apache/airflow' &&
-          github.event_name == 'push'
-        run: aws s3 sync --delete ./files/documentation s3://apache-airflow-docs
+  generate-constraints:
+    name: "Generate constraints"
+    needs: [build-info, wait-for-ci-images]
+    uses: ./.github/workflows/generate-constraints.yml
+    if: >
+      needs.build-info.outputs.ci-image-build == 'true' &&
+      needs.build-info.outputs.only-new-ui-files != 'true'
+    with:
+      runs-on-as-json-public: ${{ needs.build-info.outputs.runs-on-as-json-public }}
+      python-versions-list-as-string: ${{ needs.build-info.outputs.python-versions-list-as-string }}
+      # generate no providers constraints only in canary builds - they take quite some time to generate
+      # they are not needed for regular builds, they are only needed to update constraints in canaries
+      generate-no-providers-constraints: ${{ needs.build-info.outputs.canary-run }}
+      image-tag: ${{ needs.build-info.outputs.image-tag }}
+      chicken-egg-providers: ${{ needs.build-info.outputs.chicken-egg-providers }}
+      debug-resources: ${{ needs.build-info.outputs.debug-resources }}
 
-  prepare-test-provider-packages-wheel:
-    timeout-minutes: 40
-    name: "Build and test provider packages wheel"
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-    needs: [build-info, ci-images]
-    env:
-      RUNS_ON: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-      AIRFLOW_EXTRAS: "all"
-      PYTHON_MAJOR_MINOR_VERSION: ${{needs.build-info.outputs.defaultPythonVersion}}
-      VERSION_SUFFIX_FOR_PYPI: ".dev0"
-      NON_INTERACTIVE: "true"
-      GENERATE_PROVIDERS_ISSUE: "true"
-    if: needs.build-info.outputs.image-build == 'true' && needs.build-info.outputs.default-branch == 'main'
-    steps:
-      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
-        with:
-          persist-credentials: false
-        if: needs.build-info.outputs.default-branch == 'main'
-      - name: "Setup python"
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ needs.build-info.outputs.defaultPythonVersion }}
-          cache: 'pip'
-          cache-dependency-path: ./dev/breeze/setup*
-      - run: python -m pip install --editable ./dev/breeze/
-      - name: "Free space"
-        run: airflow-freespace
-      - name: "Pull CI image ${{env.PYTHON_MAJOR_MINOR_VERSION}}:${{ env.GITHUB_REGISTRY_PULL_IMAGE_TAG }}"
-        run: ./scripts/ci/images/ci_pull_ci_image_on_ci.sh
-      - name: "Prepare provider documentation"
-        run: ./scripts/ci/provider_packages/ci_prepare_provider_documentation.sh
-      - name: "Prepare provider packages: wheel"
-        run: ./scripts/ci/provider_packages/ci_prepare_provider_packages.sh
-        env:
-          PACKAGE_FORMAT: "wheel"
-      - name: "Prepare airflow package: wheel"
-        run: ./scripts/ci/build_airflow/ci_build_airflow_packages.sh
-        env:
-          PACKAGE_FORMAT: "wheel"
-      - name: "Install and test provider packages and airflow via wheel files"
-        run: ./scripts/ci/provider_packages/ci_install_and_test_provider_packages.sh
-        env:
-          USE_AIRFLOW_VERSION: "wheel"
-          PACKAGE_FORMAT: "wheel"
-      - name: "Install and test provider packages and airflow on Airflow 2.1 files"
-        run: ./scripts/ci/provider_packages/ci_install_and_test_provider_packages.sh
-        env:
-          USE_AIRFLOW_VERSION: "2.1.0"
-          SKIP_TWINE_CHECK: "true"
-          PACKAGE_FORMAT: "wheel"
+  ci-image-checks:
+    name: "CI image checks"
+    needs: [build-info, wait-for-ci-images]
+    uses: ./.github/workflows/ci-image-checks.yml
+    secrets: inherit
+    with:
+      runs-on-as-json-default: ${{ needs.build-info.outputs.runs-on-as-json-default }}
+      runs-on-as-json-docs-build: ${{ needs.build-info.outputs.runs-on-as-json-docs-build }}
+      image-tag: ${{ needs.build-info.outputs.image-tag }}
+      needs-mypy: ${{ needs.build-info.outputs.needs-mypy }}
+      mypy-checks: ${{ needs.build-info.outputs.mypy-checks }}
+      python-versions-list-as-string: ${{ needs.build-info.outputs.python-versions-list-as-string }}
+      branch: ${{ needs.build-info.outputs.default-branch }}
+      canary-run: ${{ needs.build-info.outputs.canary-run }}
+      default-python-version: ${{ needs.build-info.outputs.default-python-version }}
+      docs-list-as-string: ${{ needs.build-info.outputs.docs-list-as-string }}
+      latest-versions-only: ${{ needs.build-info.outputs.latest-versions-only }}
+      basic-checks-only: ${{ needs.build-info.outputs.basic-checks-only }}
+      upgrade-to-newer-dependencies: ${{ needs.build-info.outputs.upgrade-to-newer-dependencies }}
+      skip-pre-commits: ${{ needs.build-info.outputs.skip-pre-commits }}
+      chicken-egg-providers: ${{ needs.build-info.outputs.chicken-egg-providers }}
+      ci-image-build: ${{ needs.build-info.outputs.ci-image-build }}
+      include-success-outputs: ${{ needs.build-info.outputs.include-success-outputs }}
+      debug-resources: ${{ needs.build-info.outputs.debug-resources }}
+      docs-build: ${{ needs.build-info.outputs.docs-build }}
+      needs-api-codegen: ${{ needs.build-info.outputs.needs-api-codegen }}
+      default-postgres-version: ${{ needs.build-info.outputs.default-postgres-version }}
+      run-coverage: ${{ needs.build-info.outputs.run-coverage }}
 
-  prepare-test-provider-packages-sdist:
-    timeout-minutes: 40
-    name: "Build and test provider packages sdist"
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-    needs: [build-info, ci-images]
-    env:
-      RUNS_ON: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-      AIRFLOW_EXTRAS: "all"
-      PYTHON_MAJOR_MINOR_VERSION: ${{needs.build-info.outputs.defaultPythonVersion}}
-      VERSION_SUFFIX_FOR_PYPI: ".dev0"
-      NON_INTERACTIVE: "true"
-      GENERATE_PROVIDERS_ISSUE: "true"
-    if: needs.build-info.outputs.image-build == 'true' && needs.build-info.outputs.default-branch == 'main'
-    steps:
-      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
-        with:
-          persist-credentials: false
-        if: needs.build-info.outputs.default-branch == 'main'
-      - name: "Setup python"
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ needs.build-info.outputs.defaultPythonVersion }}
-          cache: 'pip'
-          cache-dependency-path: ./dev/breeze/setup*
-      - run: python -m pip install --editable ./dev/breeze/
-      - name: "Free space"
-        run: airflow-freespace
-      - name: "Pull CI image ${{env.PYTHON_MAJOR_MINOR_VERSION}}:${{ env.GITHUB_REGISTRY_PULL_IMAGE_TAG }}"
-        run: ./scripts/ci/images/ci_pull_ci_image_on_ci.sh
-      - name: "Prepare provider packages: sdist"
-        run: ./scripts/ci/provider_packages/ci_prepare_provider_packages.sh
-        env:
-          PACKAGE_FORMAT: "sdist"
-      - name: "Prepare airflow package: sdist"
-        run: ./scripts/ci/build_airflow/ci_build_airflow_packages.sh
-        env:
-          PACKAGE_FORMAT: "sdist"
-      - name: "Upload provider distribution artifacts"
-        uses: actions/upload-artifact@v2
-        with:
-          name: airflow-provider-packages
-          path: "./dist/apache-airflow-providers-*.tar.gz"
-          retention-days: 1
-      - name: "Install and test provider packages and airflow via sdist files"
-        run: ./scripts/ci/provider_packages/ci_install_and_test_provider_packages.sh
-        env:
-          USE_AIRFLOW_VERSION: "sdist"
-          PACKAGE_FORMAT: "sdist"
+  providers:
+    name: "Provider packages tests"
+    uses: ./.github/workflows/test-provider-packages.yml
+    needs: [build-info, wait-for-ci-images]
+    permissions:
+      contents: read
+      packages: read
+    secrets: inherit
+    if: >
+      needs.build-info.outputs.skip-providers-tests != 'true' &&
+      needs.build-info.outputs.latest-versions-only != 'true'
+    with:
+      runs-on-as-json-default: ${{ needs.build-info.outputs.runs-on-as-json-default }}
+      image-tag: ${{ needs.build-info.outputs.image-tag }}
+      canary-run: ${{ needs.build-info.outputs.canary-run }}
+      default-python-version: ${{ needs.build-info.outputs.default-python-version }}
+      upgrade-to-newer-dependencies: ${{ needs.build-info.outputs.upgrade-to-newer-dependencies }}
+      selected-providers-list-as-string: ${{ needs.build-info.outputs.selected-providers-list-as-string }}
+      # yamllint disable rule:line-length
+      providers-compatibility-tests-matrix: ${{ needs.build-info.outputs.providers-compatibility-tests-matrix }}
+      skip-providers-tests: ${{ needs.build-info.outputs.skip-providers-tests }}
+      python-versions: ${{ needs.build-info.outputs.python-versions }}
+      providers-test-types-list-as-string: ${{ needs.build-info.outputs.providers-test-types-list-as-string }}
 
   tests-helm:
-    timeout-minutes: 80
-    name: "Python unit tests for helm chart"
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-    needs: [build-info, ci-images]
-    env:
-      RUNS_ON: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-      MOUNT_SELECTED_LOCAL_SOURCES: "true"
-      TEST_TYPES: "Helm"
-      BACKEND: ""
-      DB_RESET: "false"
-      PYTHON_MAJOR_MINOR_VERSION: ${{needs.build-info.outputs.defaultPythonVersion}}
+    name: "Helm tests"
+    uses: ./.github/workflows/helm-tests.yml
+    needs: [build-info, wait-for-ci-images]
+    permissions:
+      contents: read
+      packages: read
+    secrets: inherit
+    with:
+      runs-on-as-json-default: ${{ needs.build-info.outputs.runs-on-as-json-default }}
+      runs-on-as-json-public: ${{ needs.build-info.outputs.runs-on-as-json-public }}
+      helm-test-packages: ${{ needs.build-info.outputs.helm-test-packages }}
+      image-tag: ${{ needs.build-info.outputs.image-tag }}
+      default-python-version: ${{ needs.build-info.outputs.default-python-version }}
     if: >
       needs.build-info.outputs.needs-helm-tests == 'true' &&
-      (github.repository == 'apache/airflow' || github.event_name != 'schedule') &&
-      needs.build-info.outputs.default-branch == 'main'
-    steps:
-      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
-        with:
-          persist-credentials: false
-      - name: "Setup python"
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ needs.build-info.outputs.defaultPythonVersion }}
-          cache: 'pip'
-          cache-dependency-path: ./dev/breeze/setup*
-      - run: python -m pip install --editable ./dev/breeze/
-      - name: "Free space"
-        run: airflow-freespace
-      - name: "Pull CI image ${{env.PYTHON_MAJOR_MINOR_VERSION}}:${{ env.GITHUB_REGISTRY_PULL_IMAGE_TAG }}"
-        run: ./scripts/ci/images/ci_pull_ci_image_on_ci.sh
-      - name: "Tests: Helm"
-        run: ./scripts/ci/testing/ci_run_airflow_testing.sh
-        env:
-          PR_LABELS: "${{ needs.build-info.outputs.pullRequestLabels }}"
-      - name: "Upload airflow logs"
-        uses: actions/upload-artifact@v2
-        if: failure()
-        with:
-          name: airflow-logs-helm
-          path: "./files/airflow_logs*"
-          retention-days: 7
-      - name: "Upload container logs"
-        uses: actions/upload-artifact@v2
-        if: failure()
-        with:
-          name: container-logs-helm
-          path: "./files/container_logs*"
-          retention-days: 7
-      - name: "Upload artifact for coverage"
-        uses: actions/upload-artifact@v2
-        if: needs.build-info.outputs.runCoverage == 'true'
-        with:
-          name: >
-            coverage-helm
-          path: "./files/coverage*.xml"
-          retention-days: 7
+      needs.build-info.outputs.default-branch == 'main' &&
+      needs.build-info.outputs.latest-versions-only != 'true'
 
   tests-postgres:
-    timeout-minutes: 130
-    name: >
-      Postgres${{matrix.postgres-version}},Py${{matrix.python-version}}:
-      ${{needs.build-info.outputs.testTypes}}
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-    needs: [build-info, ci-images]
-    strategy:
-      matrix:
-        python-version: ${{ fromJson(needs.build-info.outputs.pythonVersions) }}
-        postgres-version: ${{ fromJson(needs.build-info.outputs.postgresVersions) }}
-        exclude: ${{ fromJson(needs.build-info.outputs.postgresExclude) }}
-      fail-fast: false
-    env:
-      RUNS_ON: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-      BACKEND: postgres
-      UPGRADE_TO_NEWER_DEPENDENCIES: ${{ needs.build-info.outputs.upgradeToNewerDependencies }}
-      PYTHON_MAJOR_MINOR_VERSION: ${{ matrix.python-version }}
-      POSTGRES_VERSION: ${{ matrix.postgres-version }}
-      TEST_TYPES: "${{needs.build-info.outputs.testTypes}}"
+    name: "Postgres tests"
+    uses: ./.github/workflows/run-unit-tests.yml
+    needs: [build-info, wait-for-ci-images]
+    permissions:
+      contents: read
+      packages: read
+    secrets: inherit
+    with:
+      runs-on-as-json-default: ${{ needs.build-info.outputs.runs-on-as-json-default }}
+      backend: "postgres"
+      test-name: "Postgres"
+      test-scope: "DB"
+      test-groups: ${{ needs.build-info.outputs.test-groups }}
+      image-tag: ${{ needs.build-info.outputs.image-tag }}
+      python-versions: ${{ needs.build-info.outputs.python-versions }}
+      backend-versions: ${{ needs.build-info.outputs.postgres-versions }}
+      excluded-providers-as-string: ${{ needs.build-info.outputs.excluded-providers-as-string }}
+      excludes: ${{ needs.build-info.outputs.postgres-exclude }}
+      core-test-types-list-as-string: ${{ needs.build-info.outputs.core-test-types-list-as-string }}
+      providers-test-types-list-as-string: ${{ needs.build-info.outputs.providers-test-types-list-as-string }}
+      include-success-outputs: ${{ needs.build-info.outputs.include-success-outputs }}
+      run-migration-tests: "true"
+      run-coverage: ${{ needs.build-info.outputs.run-coverage }}
+      debug-resources: ${{ needs.build-info.outputs.debug-resources }}
     if: needs.build-info.outputs.run-tests == 'true'
-    steps:
-      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
-        with:
-          persist-credentials: false
-      - name: "Setup python"
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ needs.build-info.outputs.defaultPythonVersion }}
-          cache: 'pip'
-          cache-dependency-path: ./dev/breeze/setup*
-      - run: python -m pip install --editable ./dev/breeze/
-      - name: "Free space"
-        run: airflow-freespace
-      - name: "Pull CI image ${{env.PYTHON_MAJOR_MINOR_VERSION}}:${{ env.GITHUB_REGISTRY_PULL_IMAGE_TAG }}"
-        run: ./scripts/ci/images/ci_pull_ci_image_on_ci.sh
-      - name: "Test downgrade"
-        run: ./scripts/ci/testing/run_downgrade_test.sh
-      - name: "Test Offline SQL generation"
-        run: ./scripts/ci/testing/run_offline_sql_test.sh
-      - name: "Tests: ${{needs.build-info.outputs.testTypes}}"
-        run: ./scripts/ci/testing/ci_run_airflow_testing.sh
-        env:
-          PR_LABELS: "${{ needs.build-info.outputs.pullRequestLabels }}"
-      - name: "Upload airflow logs"
-        uses: actions/upload-artifact@v2
-        if: failure()
-        with:
-          name: airflow-logs-${{matrix.python-version}}-${{matrix.postgres-version}}
-          path: "./files/airflow_logs*"
-          retention-days: 7
-      - name: "Upload container logs"
-        uses: actions/upload-artifact@v2
-        if: failure()
-        with:
-          name: container-logs-postgres-${{matrix.python-version}}-${{matrix.postgres-version}}
-          path: "./files/container_logs*"
-          retention-days: 7
-      - name: "Upload artifact for coverage"
-        uses: actions/upload-artifact@v2
-        if: needs.build-info.outputs.runCoverage == 'true'
-        with:
-          name: >
-            coverage-postgres-${{matrix.python-version}}-${{matrix.postgres-version}}
-          path: "./files/coverage*.xml"
-          retention-days: 7
 
   tests-mysql:
-    timeout-minutes: 130
-    name: >
-      MySQL${{matrix.mysql-version}}, Py${{matrix.python-version}}: ${{needs.build-info.outputs.testTypes}}
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-    needs: [build-info, ci-images]
-    strategy:
-      matrix:
-        python-version: ${{ fromJson(needs.build-info.outputs.pythonVersions) }}
-        mysql-version: ${{ fromJson(needs.build-info.outputs.mysqlVersions) }}
-        exclude: ${{ fromJson(needs.build-info.outputs.mysqlExclude) }}
-      fail-fast: false
-    env:
-      RUNS_ON: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-      BACKEND: mysql
-      UPGRADE_TO_NEWER_DEPENDENCIES: ${{ needs.build-info.outputs.upgradeToNewerDependencies }}
-      PYTHON_MAJOR_MINOR_VERSION: ${{ matrix.python-version }}
-      MYSQL_VERSION: ${{ matrix.mysql-version }}
-      TEST_TYPES: "${{needs.build-info.outputs.testTypes}}"
+    name: "MySQL tests"
+    uses: ./.github/workflows/run-unit-tests.yml
+    needs: [build-info, wait-for-ci-images]
+    permissions:
+      contents: read
+      packages: read
+    secrets: inherit
+    with:
+      runs-on-as-json-default: ${{ needs.build-info.outputs.runs-on-as-json-default }}
+      backend: "mysql"
+      test-name: "MySQL"
+      test-scope: "DB"
+      test-groups: ${{ needs.build-info.outputs.test-groups }}
+      image-tag: ${{ needs.build-info.outputs.image-tag }}
+      python-versions: ${{ needs.build-info.outputs.python-versions }}
+      backend-versions: ${{ needs.build-info.outputs.mysql-versions }}
+      excluded-providers-as-string: ${{ needs.build-info.outputs.excluded-providers-as-string }}
+      excludes: ${{ needs.build-info.outputs.mysql-exclude }}
+      core-test-types-list-as-string: ${{ needs.build-info.outputs.core-test-types-list-as-string }}
+      providers-test-types-list-as-string: ${{ needs.build-info.outputs.providers-test-types-list-as-string }}
+      include-success-outputs: ${{ needs.build-info.outputs.include-success-outputs }}
+      run-coverage: ${{ needs.build-info.outputs.run-coverage }}
+      run-migration-tests: "true"
+      debug-resources: ${{ needs.build-info.outputs.debug-resources }}
     if: needs.build-info.outputs.run-tests == 'true'
-    steps:
-      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
-        with:
-          persist-credentials: false
-      - name: "Setup python"
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ needs.build-info.outputs.defaultPythonVersion }}
-          cache: 'pip'
-          cache-dependency-path: ./dev/breeze/setup*
-      - run: python -m pip install --editable ./dev/breeze/
-      - name: "Free space"
-        run: airflow-freespace
-      - name: "Pull CI image ${{env.PYTHON_MAJOR_MINOR_VERSION}}:${{ env.GITHUB_REGISTRY_PULL_IMAGE_TAG }}"
-        run: ./scripts/ci/images/ci_pull_ci_image_on_ci.sh
-      - name: "Test downgrade"
-        run: ./scripts/ci/testing/run_downgrade_test.sh
-      - name: "Test Offline SQL generation"
-        run: ./scripts/ci/testing/run_offline_sql_test.sh
-      - name: "Tests: ${{needs.build-info.outputs.testTypes}}"
-        run: ./scripts/ci/testing/ci_run_airflow_testing.sh
-        env:
-          PR_LABELS: "${{ needs.build-info.outputs.pullRequestLabels }}"
-      - name: "Upload airflow logs"
-        uses: actions/upload-artifact@v2
-        if: failure()
-        with:
-          name: airflow-logs-${{matrix.python-version}}-${{matrix.mysql-version}}
-          path: "./files/airflow_logs*"
-          retention-days: 7
-      - name: "Upload container logs"
-        uses: actions/upload-artifact@v2
-        if: failure()
-        with:
-          name: container-logs-mysql-${{matrix.python-version}}-${{matrix.mysql-version}}
-          path: "./files/container_logs*"
-          retention-days: 7
-      - name: "Upload artifact for coverage"
-        uses: actions/upload-artifact@v2
-        if: needs.build-info.outputs.runCoverage == 'true'
-        with:
-          name: coverage-mysql-${{matrix.python-version}}-${{matrix.mysql-version}}
-          path: "./files/coverage*.xml"
-          retention-days: 7
-
-  tests-mssql:
-    timeout-minutes: 130
-    name: >
-      MSSQL${{matrix.mssql-version}}, Py${{matrix.python-version}}: ${{needs.build-info.outputs.testTypes}}
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-    needs: [build-info, ci-images]
-    strategy:
-      matrix:
-        python-version: ${{ fromJson(needs.build-info.outputs.pythonVersions) }}
-        mssql-version: ${{ fromJson(needs.build-info.outputs.mssqlVersions) }}
-        exclude: ${{ fromJson(needs.build-info.outputs.mssqlExclude) }}
-      fail-fast: false
-    env:
-      RUNS_ON: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-      BACKEND: mssql
-      UPGRADE_TO_NEWER_DEPENDENCIES: ${{ needs.build-info.outputs.upgradeToNewerDependencies }}
-      PYTHON_MAJOR_MINOR_VERSION: ${{ matrix.python-version }}
-      MSSQL_VERSION: ${{ matrix.mssql-version }}
-      TEST_TYPES: "${{needs.build-info.outputs.testTypes}}"
-    if: needs.build-info.outputs.run-tests == 'true'
-    steps:
-      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
-        with:
-          persist-credentials: false
-      - name: "Setup python"
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ needs.build-info.outputs.defaultPythonVersion }}
-          cache: 'pip'
-          cache-dependency-path: ./dev/breeze/setup*
-      - run: python -m pip install --editable ./dev/breeze/
-      - name: "Free space"
-        run: airflow-freespace
-      - name: "Pull CI image ${{env.PYTHON_MAJOR_MINOR_VERSION}}:${{ env.GITHUB_REGISTRY_PULL_IMAGE_TAG }}"
-        run: ./scripts/ci/images/ci_pull_ci_image_on_ci.sh
-      - name: "Test downgrade"
-        run: ./scripts/ci/testing/run_downgrade_test.sh
-      - name: "Tests: ${{needs.build-info.outputs.testTypes}}"
-        run: ./scripts/ci/testing/ci_run_airflow_testing.sh
-        env:
-          PR_LABELS: "${{ needs.build-info.outputs.pullRequestLabels }}"
-      - name: "Upload airflow logs"
-        uses: actions/upload-artifact@v2
-        if: failure()
-        with:
-          name: airflow-logs-${{matrix.python-version}}-${{matrix.mssql-version}}
-          path: "./files/airflow_logs*"
-          retention-days: 7
-      - name: "Upload container logs"
-        uses: actions/upload-artifact@v2
-        if: failure()
-        with:
-          name: container-logs-mssql-${{matrix.python-version}}-${{matrix.mssql-version}}
-          path: "./files/container_logs*"
-          retention-days: 7
-      - name: "Upload artifact for coverage"
-        uses: actions/upload-artifact@v2
-        if: needs.build-info.outputs.runCoverage == 'true'
-        with:
-          name: coverage-mssql-${{matrix.python-version}}-${{matrix.mssql-version}}
-          path: "./files/coverage*.xml"
-          retention-days: 7
 
   tests-sqlite:
-    timeout-minutes: 130
+    name: "Sqlite tests"
+    uses: ./.github/workflows/run-unit-tests.yml
+    needs: [build-info, wait-for-ci-images]
+    permissions:
+      contents: read
+      packages: read
+    secrets: inherit
+    with:
+      runs-on-as-json-default: ${{ needs.build-info.outputs.runs-on-as-json-default }}
+      backend: "sqlite"
+      test-name: "Sqlite"
+      test-name-separator: ""
+      test-scope: "DB"
+      test-groups: ${{ needs.build-info.outputs.test-groups }}
+      image-tag: ${{ needs.build-info.outputs.image-tag }}
+      python-versions: ${{ needs.build-info.outputs.python-versions }}
+      # No versions for sqlite
+      backend-versions: "['']"
+      excluded-providers-as-string: ${{ needs.build-info.outputs.excluded-providers-as-string }}
+      excludes: ${{ needs.build-info.outputs.sqlite-exclude }}
+      core-test-types-list-as-string: ${{ needs.build-info.outputs.core-test-types-list-as-string }}
+      providers-test-types-list-as-string: ${{ needs.build-info.outputs.providers-test-types-list-as-string }}
+      include-success-outputs: ${{ needs.build-info.outputs.include-success-outputs }}
+      run-coverage: ${{ needs.build-info.outputs.run-coverage }}
+      run-migration-tests: "true"
+      debug-resources: ${{ needs.build-info.outputs.debug-resources }}
+    if: needs.build-info.outputs.run-tests == 'true'
+
+  tests-non-db:
+    name: "Non-DB tests"
+    uses: ./.github/workflows/run-unit-tests.yml
+    needs: [build-info, wait-for-ci-images]
+    permissions:
+      contents: read
+      packages: read
+    secrets: inherit
+    with:
+      runs-on-as-json-default: ${{ needs.build-info.outputs.runs-on-as-json-default }}
+      backend: "sqlite"
+      test-name: ""
+      test-name-separator: ""
+      test-scope: "Non-DB"
+      test-groups: ${{ needs.build-info.outputs.test-groups }}
+      image-tag: ${{ needs.build-info.outputs.image-tag }}
+      python-versions: ${{ needs.build-info.outputs.python-versions }}
+      # No versions for non-db
+      backend-versions: "['']"
+      excluded-providers-as-string: ${{ needs.build-info.outputs.excluded-providers-as-string }}
+      excludes: ${{ needs.build-info.outputs.sqlite-exclude }}
+      core-test-types-list-as-string: ${{ needs.build-info.outputs.core-test-types-list-as-string }}
+      providers-test-types-list-as-string: ${{ needs.build-info.outputs.providers-test-types-list-as-string }}
+      include-success-outputs: ${{ needs.build-info.outputs.include-success-outputs }}
+      run-coverage: ${{ needs.build-info.outputs.run-coverage }}
+      debug-resources: ${{ needs.build-info.outputs.debug-resources }}
+    if: needs.build-info.outputs.run-tests == 'true'
+
+  tests-special:
+    name: "Special tests"
+    uses: ./.github/workflows/special-tests.yml
+    needs: [build-info, wait-for-ci-images]
+    permissions:
+      contents: read
+      packages: read
+    secrets: inherit
+    if: >
+      needs.build-info.outputs.run-tests == 'true' &&
+      (needs.build-info.outputs.canary-run == 'true' ||
+       needs.build-info.outputs.upgrade-to-newer-dependencies != 'false' ||
+       needs.build-info.outputs.full-tests-needed == 'true')
+    with:
+      test-groups: ${{ needs.build-info.outputs.test-groups }}
+      runs-on-as-json-default: ${{ needs.build-info.outputs.runs-on-as-json-default }}
+      image-tag: ${{ needs.build-info.outputs.image-tag }}
+      core-test-types-list-as-string: ${{ needs.build-info.outputs.core-test-types-list-as-string }}
+      providers-test-types-list-as-string: ${{ needs.build-info.outputs.providers-test-types-list-as-string }}
+      run-coverage: ${{ needs.build-info.outputs.run-coverage }}
+      default-python-version: ${{ needs.build-info.outputs.default-python-version }}
+      python-versions: ${{ needs.build-info.outputs.python-versions }}
+      default-postgres-version: ${{ needs.build-info.outputs.default-postgres-version }}
+      excluded-providers-as-string: ${{ needs.build-info.outputs.excluded-providers-as-string }}
+      canary-run: ${{ needs.build-info.outputs.canary-run }}
+      upgrade-to-newer-dependencies: ${{ needs.build-info.outputs.upgrade-to-newer-dependencies }}
+      include-success-outputs: ${{ needs.build-info.outputs.include-success-outputs }}
+      debug-resources: ${{ needs.build-info.outputs.debug-resources }}
+
+  tests-integration-system:
+    name: Integration and System Tests
+    needs: [build-info, wait-for-ci-images]
+    uses: ./.github/workflows/integration-system-tests.yml
+    permissions:
+      contents: read
+      packages: read
+    secrets: inherit
+    with:
+      runs-on-as-json-public: ${{ needs.build-info.outputs.runs-on-as-json-public }}
+      image-tag: ${{ needs.build-info.outputs.image-tag }}
+      testable-core-integrations: ${{ needs.build-info.outputs.testable-core-integrations }}
+      testable-providers-integrations: ${{ needs.build-info.outputs.testable-providers-integrations }}
+      run-system-tests: ${{ needs.build-info.outputs.run-tests }}
+      default-python-version: ${{ needs.build-info.outputs.default-python-version }}
+      default-postgres-version: ${{ needs.build-info.outputs.default-postgres-version }}
+      default-mysql-version: ${{ needs.build-info.outputs.default-mysql-version }}
+      skip-providers-tests: ${{ needs.build-info.outputs.skip-providers-tests }}
+      run-coverage: ${{ needs.build-info.outputs.run-coverage }}
+      debug-resources: ${{ needs.build-info.outputs.debug-resources }}
+    if: needs.build-info.outputs.run-tests == 'true'
+
+  tests-with-lowest-direct-resolution:
+    name: "Lowest direct dependency providers tests"
+    needs: [build-info, wait-for-ci-images]
+    uses: ./.github/workflows/run-unit-tests.yml
+    permissions:
+      contents: read
+      packages: read
+    secrets: inherit
+    if: >
+      needs.build-info.outputs.run-tests == 'true'
+    with:
+      runs-on-as-json-default: ${{ needs.build-info.outputs.runs-on-as-json-default }}
+      test-name: "LowestDeps-Postgres"
+      force-lowest-dependencies: "true"
+      test-scope: "All"
+      test-groups: ${{ needs.build-info.outputs.test-groups }}
+      backend: "postgres"
+      image-tag: ${{ needs.build-info.outputs.image-tag }}
+      python-versions: ${{ needs.build-info.outputs.python-versions }}
+      backend-versions: "['${{ needs.build-info.outputs.default-postgres-version }}']"
+      excluded-providers-as-string: ${{ needs.build-info.outputs.excluded-providers-as-string }}
+      excludes: "[]"
+      core-test-types-list-as-string: ${{ needs.build-info.outputs.core-test-types-list-as-string }}
+      # yamllint disable rule:line-length
+      providers-test-types-list-as-string: ${{ needs.build-info.outputs.individual-providers-test-types-list-as-string }}
+      include-success-outputs: ${{ needs.build-info.outputs.include-success-outputs }}
+      run-coverage: ${{ needs.build-info.outputs.run-coverage }}
+      debug-resources: ${{ needs.build-info.outputs.debug-resources }}
+      monitor-delay-time-in-seconds: 120
+
+  build-prod-images:
     name: >
-      Sqlite Py${{matrix.python-version}}: ${{needs.build-info.outputs.testTypes}}
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-    needs: [build-info, ci-images]
-    strategy:
-      matrix:
-        python-version: ${{ fromJson(needs.build-info.outputs.pythonVersions) }}
-        exclude: ${{ fromJson(needs.build-info.outputs.sqliteExclude) }}
-      fail-fast: false
-    env:
-      RUNS_ON: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-      BACKEND: sqlite
-      UPGRADE_TO_NEWER_DEPENDENCIES: ${{ needs.build-info.outputs.upgradeToNewerDependencies }}
-      PYTHON_MAJOR_MINOR_VERSION: ${{ matrix.python-version }}
-      TEST_TYPES: "${{needs.build-info.outputs.testTypes}}"
-    if: needs.build-info.outputs.run-tests == 'true'
-    steps:
-      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
-        with:
-          persist-credentials: false
-      - name: "Setup python"
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ needs.build-info.outputs.defaultPythonVersion }}
-          cache: 'pip'
-          cache-dependency-path: ./dev/breeze/setup*
-      - run: python -m pip install --editable ./dev/breeze/
-      - name: "Free space"
-        run: airflow-freespace
-      - name: "Pull CI image ${{env.PYTHON_MAJOR_MINOR_VERSION}}:${{ env.GITHUB_REGISTRY_PULL_IMAGE_TAG }}"
-        run: ./scripts/ci/images/ci_pull_ci_image_on_ci.sh
-      - name: "Test downgrade"
-        run: ./scripts/ci/testing/run_downgrade_test.sh
-      - name: "Tests: ${{needs.build-info.outputs.testTypes}}"
-        run: ./scripts/ci/testing/ci_run_airflow_testing.sh
-        env:
-          PR_LABELS: "${{ needs.build-info.outputs.pullRequestLabels }}"
-      - name: "Upload airflow logs"
-        uses: actions/upload-artifact@v2
-        if: failure()
-        with:
-          name: airflow-logs-${{matrix.python-version}}
-          path: './files/airflow_logs*'
-          retention-days: 7
-      - name: "Upload container logs"
-        uses: actions/upload-artifact@v2
-        if: failure()
-        with:
-          name: container-logs-sqlite-${{matrix.python-version}}
-          path: "./files/container_logs*"
-          retention-days: 7
-      - name: "Upload artifact for coverage"
-        uses: actions/upload-artifact@v2
-        if: needs.build-info.outputs.runCoverage == 'true'
-        with:
-          name: coverage-sqlite-${{matrix.python-version}}
-          path: ./files/coverage*.xml
-          retention-days: 7
+      ${{ needs.build-info.outputs.in-workflow-build == 'true' && 'Build' || 'Skip building' }}
+      PROD images in-workflow
+    needs: [build-info, build-ci-images, generate-constraints]
+    uses: ./.github/workflows/prod-image-build.yml
+    permissions:
+      contents: read
+      # This write is only given here for `push` events from "apache/airflow" repo. It is not given for PRs
+      # from forks. This is to prevent malicious PRs from creating images in the "apache/airflow" repo.
+      # For regular build for PRS this "build-prod-images" workflow will be skipped anyway by the
+      # "in-workflow-build" condition
+      packages: write
+    secrets: inherit
+    with:
+      runs-on-as-json-public: ${{ needs.build-info.outputs.runs-on-as-json-public }}
+      build-type: "Regular"
+      do-build: ${{ needs.build-info.outputs.in-workflow-build }}
+      upload-package-artifact: "true"
+      image-tag: ${{ needs.build-info.outputs.image-tag }}
+      platform: "linux/amd64"
+      python-versions: ${{ needs.build-info.outputs.python-versions }}
+      default-python-version: ${{ needs.build-info.outputs.default-python-version }}
+      branch: ${{ needs.build-info.outputs.default-branch }}
+      push-image: "true"
+      use-uv: ${{ needs.build-info.outputs.force-pip == 'true' && 'false' || 'true' }}
+      build-provider-packages: ${{ needs.build-info.outputs.default-branch == 'main' }}
+      upgrade-to-newer-dependencies: ${{ needs.build-info.outputs.upgrade-to-newer-dependencies }}
+      chicken-egg-providers: ${{ needs.build-info.outputs.chicken-egg-providers }}
+      constraints-branch: ${{ needs.build-info.outputs.default-constraints-branch }}
+      docker-cache: ${{ needs.build-info.outputs.docker-cache }}
+      disable-airflow-repo-cache: ${{ needs.build-info.outputs.disable-airflow-repo-cache }}
 
-  tests-quarantined:
-    timeout-minutes: 60
-    name: "Quarantined tests"
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-    continue-on-error: true
-    needs: [build-info, ci-images]
-    env:
-      RUNS_ON: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-      PYTHON_MAJOR_MINOR_VERSION: ${{ needs.build-info.outputs.defaultPythonVersion }}
-      MYSQL_VERSION: ${{needs.build-info.outputs.defaultMySQLVersion}}
-      POSTGRES_VERSION: ${{needs.build-info.outputs.defaultPostgresVersion}}
-      TEST_TYPES: "Quarantined"
-      NUM_RUNS: 10
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    if: needs.build-info.outputs.run-tests == 'true'
-    steps:
-      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
-        with:
-          persist-credentials: false
-      - name: "Setup python"
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ needs.build-info.outputs.defaultPythonVersion }}
-          cache: 'pip'
-          cache-dependency-path: ./dev/breeze/setup*
-      - name: "Set issue id for main"
-        if: github.ref == 'refs/heads/main'
-        run: |
-          echo "ISSUE_ID=10118" >> $GITHUB_ENV
-      - name: "Set issue id for v1-10-stable"
-        if: github.ref == 'refs/heads/v1-10-stable'
-        run: |
-          echo "ISSUE_ID=10127" >> $GITHUB_ENV
-      - name: "Set issue id for v1-10-test"
-        if: github.ref == 'refs/heads/v1-10-test'
-        run: |
-          echo "ISSUE_ID=10128" >> $GITHUB_ENV
-      - run: python -m pip install --editable ./dev/breeze/
-      - name: "Free space"
-        run: airflow-freespace
-      - name: "Pull CI image ${{env.PYTHON_MAJOR_MINOR_VERSION}}:${{ env.GITHUB_REGISTRY_PULL_IMAGE_TAG }}"
-        run: ./scripts/ci/images/ci_pull_ci_image_on_ci.sh
-      - name: "Tests: Quarantined"
-        run: ./scripts/ci/testing/ci_run_quarantined_tests.sh
-        env:
-          PR_LABELS: "${{ needs.build-info.outputs.pullRequestLabels }}"
-      - name: "Upload Quarantine test results"
-        uses: actions/upload-artifact@v2
-        if: always()
-        with:
-          name: quarantined-tests
-          path: "files/test_result-*.xml"
-          retention-days: 7
-      - name: "Upload airflow logs"
-        uses: actions/upload-artifact@v2
-        if: failure()
-        with:
-          name: airflow-logs-quarantined-${{ matrix.backend }}
-          path: "./files/airflow_logs*"
-          retention-days: 7
-      - name: "Upload container logs"
-        uses: actions/upload-artifact@v2
-        if: failure()
-        with:
-          name: container-logs-quarantined-${{ matrix.backend }}
-          path: "./files/container_logs*"
-          retention-days: 7
-      - name: "Upload artifact for coverage"
-        uses: actions/upload-artifact@v2
-        if: needs.build-info.outputs.runCoverage == 'true'
-        with:
-          name: coverage-quarantined-${{ matrix.backend }}
-          path: "./files/coverage*.xml"
-          retention-days: 7
-
-  upload-coverage:
-    timeout-minutes: 15
-    name: "Upload coverage"
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-    continue-on-error: true
-    needs:
-      - build-info
-      - tests-postgres
-      - tests-sqlite
-      - tests-mysql
-      - tests-mssql
-      - tests-quarantined
-    env:
-      RUNS_ON: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-    # Only upload coverage on merges to main
-    if: needs.build-info.outputs.runCoverage == 'true'
-    steps:
-      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
-        with:
-          persist-credentials: false
-          submodules: recursive
-      - name: "Download all artifacts from the current build"
-        uses: actions/download-artifact@v2
-        with:
-          path: ./coverage-files
-      - name: "Removes unnecessary artifacts"
-        run: ls ./coverage-files | grep -v coverage | xargs rm -rf
-      - name: "Upload all coverage reports to codecov"
-        uses: ./.github/actions/codecov-action
-        with:
-          directory: "./coverage-files"
-
-  prod-images:
-    timeout-minutes: 120
+  wait-for-prod-images:
+    timeout-minutes: 80
     name: "Wait for PROD images"
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-    needs: [build-info, ci-images]
-    if: needs.build-info.outputs.image-build == 'true'
+    runs-on: ${{ fromJSON(needs.build-info.outputs.runs-on-as-json-public) }}
+    needs: [build-info, wait-for-ci-images, build-prod-images]
+    if: needs.build-info.outputs.prod-image-build == 'true'
     env:
-      RUNS_ON: ${{ fromJson(needs.build-info.outputs.runsOn) }}
       BACKEND: sqlite
-      PYTHON_MAJOR_MINOR_VERSION: ${{ needs.build-info.outputs.defaultPythonVersion }}
-      UPGRADE_TO_NEWER_DEPENDENCIES: ${{ needs.build-info.outputs.upgradeToNewerDependencies }}
+      PYTHON_MAJOR_MINOR_VERSION: "${{needs.build-info.outputs.default-python-version}}"
+      # Force more parallelism for pull on public images
+      PARALLELISM: 6
+      INCLUDE_SUCCESS_OUTPUTS: "${{needs.build-info.outputs.include-success-outputs}}"
+      IMAGE_TAG: ${{ needs.build-info.outputs.image-tag }}
     steps:
+      - name: "Cleanup repo"
+        shell: bash
+        run: docker run -v "${GITHUB_WORKSPACE}:/workspace" -u 0:0 bash -c "rm -rf /workspace/*"
+        if: needs.build-info.outputs.in-workflow-build == 'false'
       - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: "Setup python"
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ needs.build-info.outputs.defaultPythonVersion }}
-          cache: 'pip'
-          cache-dependency-path: ./dev/breeze/setup*
-      - run: python -m pip install --editable ./dev/breeze/
-      - name: "Free space"
-        run: airflow-freespace
-      - name: "Cache virtualenv environment"
-        uses: actions/cache@v2
-        with:
-          path: '.build/.docker_venv'
-          key: ${{ runner.os }}-docker-venv-${{ hashFiles('scripts/ci/images/ci_run_docker_tests.py') }}
-      - name: >
-          Wait for PROD images
-          ${{ needs.build-info.outputs.pythonVersions }}:${{ env.GITHUB_REGISTRY_PULL_IMAGE_TAG }}
-        # We wait for the images to be available either from "build-images.yml' run as pull_request_target.
+        if: needs.build-info.outputs.in-workflow-build == 'false'
+      - name: "Cleanup docker"
+        run: ./scripts/ci/cleanup_docker.sh
+        if: needs.build-info.outputs.in-workflow-build == 'false'
+      - name: "Install Breeze"
+        uses: ./.github/actions/breeze
+        if: needs.build-info.outputs.in-workflow-build == 'false'
+      - name: Login to ghcr.io
+        run: echo "${{ env.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        if: needs.build-info.outputs.in-workflow-build == 'false'
+      - name: Wait for PROD images ${{ env.PYTHON_VERSIONS }}:${{ needs.build-info.outputs.image-tag }}
+        # We wait for the images to be available either from "build-images.yml' run as pull_request_target
+        # or from build-prod-images (or build-prod-images-release-branch) above.
         # We are utilising single job to wait for all images because this job merely waits
-        # For the images to be available and test them.
-        #
-        id: wait-for-images
-        run: ./scripts/ci/images/ci_wait_for_and_verify_all_prod_images.sh
+        # For the images to be available.
+        run: breeze prod-image pull --wait-for-image --run-in-parallel
         env:
-          CURRENT_PYTHON_MAJOR_MINOR_VERSIONS_AS_STRING: >
-            ${{needs.build-info.outputs.pythonVersionsListAsString}}
-          VERIFY_IMAGE: "true"
-          PR_LABELS: "${{ needs.build-info.outputs.pullRequestLabels }}"
+          PYTHON_VERSIONS: ${{ needs.build-info.outputs.python-versions-list-as-string }}
+          DEBUG_RESOURCES: ${{ needs.build-info.outputs.debug-resources }}
+        if: needs.build-info.outputs.in-workflow-build == 'false'
+
+  additional-prod-image-tests:
+    name: "Additional PROD image tests"
+    needs: [build-info, wait-for-prod-images, generate-constraints]
+    uses: ./.github/workflows/additional-prod-image-tests.yml
+    with:
+      runs-on-as-json-public: ${{ needs.build-info.outputs.runs-on-as-json-public }}
+      default-branch: ${{ needs.build-info.outputs.default-branch }}
+      constraints-branch: ${{ needs.build-info.outputs.default-constraints-branch }}
+      image-tag: ${{ needs.build-info.outputs.image-tag }}
+      upgrade-to-newer-dependencies: ${{ needs.build-info.outputs.upgrade-to-newer-dependencies }}
+      chicken-egg-providers: ${{ needs.build-info.outputs.chicken-egg-providers }}
+      docker-cache: ${{ needs.build-info.outputs.docker-cache }}
+      disable-airflow-repo-cache: ${{ needs.build-info.outputs.disable-airflow-repo-cache }}
+      default-python-version: ${{ needs.build-info.outputs.default-python-version }}
+      canary-run: ${{ needs.build-info.outputs.canary-run }}
+    if: needs.build-info.outputs.prod-image-build == 'true'
 
   tests-kubernetes:
-    timeout-minutes: 50
-    name: Helm Chart; ${{matrix.executor}}
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-    needs: [build-info, prod-images]
-    strategy:
-      matrix:
-        executor: [KubernetesExecutor, CeleryExecutor, LocalExecutor]
-      fail-fast: false
-    env:
-      RUNS_ON: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-      BACKEND: postgres
-      RUN_TESTS: "true"
-      RUNTIME: "kubernetes"
-      KUBERNETES_MODE: "image"
-      EXECUTOR: ${{matrix.executor}}
-      KIND_VERSION: "${{ needs.build-info.outputs.defaultKindVersion }}"
-      HELM_VERSION: "${{ needs.build-info.outputs.defaultHelmVersion }}"
-      CURRENT_PYTHON_MAJOR_MINOR_VERSIONS_AS_STRING: >
-        ${{needs.build-info.outputs.pythonVersionsListAsString}}
-      CURRENT_KUBERNETES_VERSIONS_AS_STRING: >
-        ${{needs.build-info.outputs.kubernetesVersionsListAsString}}
+    name: "Kubernetes tests"
+    uses: ./.github/workflows/k8s-tests.yml
+    needs: [build-info, wait-for-prod-images]
+    permissions:
+      contents: read
+      packages: read
+    secrets: inherit
+    with:
+      runs-on-as-json-default: ${{ needs.build-info.outputs.runs-on-as-json-default }}
+      image-tag: ${{ needs.build-info.outputs.image-tag }}
+      python-versions-list-as-string: ${{ needs.build-info.outputs.python-versions-list-as-string }}
+      kubernetes-versions-list-as-string: ${{ needs.build-info.outputs.kubernetes-versions-list-as-string }}
+      kubernetes-combos-list-as-string: ${{ needs.build-info.outputs.kubernetes-combos-list-as-string }}
+      include-success-outputs: ${{ needs.build-info.outputs.include-success-outputs }}
+      use-uv: ${{ needs.build-info.outputs.force-pip == 'true' && 'false' || 'true' }}
+      debug-resources: ${{ needs.build-info.outputs.debug-resources }}
     if: >
       ( needs.build-info.outputs.run-kubernetes-tests == 'true' ||
-        needs.build-info.outputs.needs-helm-tests == 'true' ) &&
-      needs.build-info.outputs.default-branch == 'main'
-    steps:
-      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
-        with:
-          persist-credentials: false
-      - name: "Setup python"
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ needs.build-info.outputs.defaultPythonVersion }}
-          cache: 'pip'
-          cache-dependency-path: ./dev/breeze/setup*
-      - run: python -m pip install --editable ./dev/breeze/
-      - name: "Free space"
-        run: airflow-freespace
-      - name: "Get all PROD images"
-        run: ./scripts/ci/images/ci_wait_for_and_verify_all_prod_images.sh
-        env:
-          VERIFY_IMAGE: "false"
-      - name: "Cache bin folder with tools for kubernetes testing"
-        uses: actions/cache@v2
-        with:
-          path: ".build/kubernetes-bin"
-          key: "kubernetes-binaries
--${{ needs.build-info.outputs.defaultKindVersion }}\
--${{ needs.build-info.outputs.defaultHelmVersion }}"
-          restore-keys: "kubernetes-binaries"
-      - name: "Kubernetes Tests"
-        run: ./scripts/ci/kubernetes/ci_setup_clusters_and_run_kubernetes_tests_in_parallel.sh
-        env:
-          PR_LABELS: "${{ needs.build-info.outputs.pullRequestLabels }}"
-      - name: "Upload KinD logs"
-        uses: actions/upload-artifact@v2
-        if: failure() || cancelled()
-        with:
-          name: >
-            kind-logs-${{matrix.executor}}
-          path: /tmp/kind_logs_*
-          retention-days: 7
+      needs.build-info.outputs.needs-helm-tests == 'true')
 
-  tests-helm-executor-upgrade:
-    timeout-minutes: 80
-    name: Helm Chart Executor Upgrade
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-    needs: [build-info, prod-images]
-    env:
-      RUNS_ON: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-      BACKEND: postgres
-      RUN_TESTS: "true"
-      RUNTIME: "kubernetes"
-      KUBERNETES_MODE: "image"
-      EXECUTOR: "KubernetesExecutor"
-      KIND_VERSION: "${{ needs.build-info.outputs.defaultKindVersion }}"
-      HELM_VERSION: "${{ needs.build-info.outputs.defaultHelmVersion }}"
-      CURRENT_PYTHON_MAJOR_MINOR_VERSIONS_AS_STRING: >
-        ${{needs.build-info.outputs.pythonVersionsListAsString}}
-      CURRENT_KUBERNETES_VERSIONS_AS_STRING: >
-        ${{needs.build-info.outputs.kubernetesVersionsListAsString}}
+  tests-task-sdk:
+    name: "Task SDK tests"
+    uses: ./.github/workflows/task-sdk-tests.yml
+    needs: [build-info, wait-for-ci-images]
+    permissions:
+      contents: read
+      packages: read
+    secrets: inherit
+    with:
+      runs-on-as-json-default: ${{ needs.build-info.outputs.runs-on-as-json-default }}
+      image-tag: ${{ needs.build-info.outputs.image-tag }}
+      default-python-version: ${{ needs.build-info.outputs.default-python-version }}
+      python-versions: ${{ needs.build-info.outputs.python-versions }}
+      run-task-sdk-tests: ${{ needs.build-info.outputs.run-task-sdk-tests }}
     if: >
-      needs.build-info.outputs.run-kubernetes-tests == 'true' &&
-      needs.build-info.outputs.default-branch == 'main'
-    steps:
-      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
-        with:
-          persist-credentials: false
-      - name: "Setup python"
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ needs.build-info.outputs.defaultPythonVersion }}
-          cache: 'pip'
-          cache-dependency-path: ./dev/breeze/setup*
-      - run: python -m pip install --editable ./dev/breeze/
-      - name: "Free space"
-        run: airflow-freespace
-      - name: "Get all PROD images"
-        run: ./scripts/ci/images/ci_wait_for_and_verify_all_prod_images.sh
-        env:
-          VERIFY_IMAGE: "false"
-      - name: "Cache virtualenv for kubernetes testing"
-        uses: actions/cache@v2
-        with:
-          path: ".build/.kubernetes_venv"
-          key: "kubernetes-${{ needs.build-info.outputs.defaultPythonVersion }}\
-  -${{needs.build-info.outputs.kubernetesVersionsListAsString}}
-  -${{needs.build-info.outputs.pythonVersionsListAsString}}
-  -${{ hashFiles('setup.py','setup.cfg') }}"
-          restore-keys: "kubernetes-${{ needs.build-info.outputs.defaultPythonVersion }}-\
-  -${{needs.build-info.outputs.kubernetesVersionsListAsString}}
-  -${{needs.build-info.outputs.pythonVersionsListAsString}}"
-      - name: "Cache bin folder with tools for kubernetes testing"
-        uses: actions/cache@v2
-        with:
-          path: ".build/kubernetes-bin"
-          key: "kubernetes-binaries
-  -${{ needs.build-info.outputs.defaultKindVersion }}\
-  -${{ needs.build-info.outputs.defaultHelmVersion }}"
-          restore-keys: "kubernetes-binaries"
-      - name: "Kubernetes Helm Chart Executor Upgrade Tests"
-        run: ./scripts/ci/kubernetes/ci_upgrade_cluster_with_different_executors_in_parallel.sh
-        env:
-          PR_LABELS: "${{ needs.build-info.outputs.pullRequestLabels }}"
-      - name: "Upload KinD logs"
-        uses: actions/upload-artifact@v2
-        if: failure() || cancelled()
-        with:
-          name: >
-            kind-logs-KubernetesExecutor
-          path: /tmp/kind_logs_*
-          retention-days: 7
+      ( needs.build-info.outputs.run-task-sdk-tests == 'true' ||
+      needs.build-info.outputs.run-tests == 'true' &&
+      needs.build-info.outputs.only-new-ui-files != 'true')
 
-  constraints:
+  finalize-tests:
+    name: Finalize tests
     permissions:
       contents: write
-    timeout-minutes: 40
-    name: "Constraints"
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
+      packages: write
+    secrets: inherit
     needs:
       - build-info
-      - ci-images
-      - prod-images
-      - static-checks
+      - generate-constraints
+      - wait-for-ci-images
+      - wait-for-prod-images
+      - ci-image-checks
       - tests-sqlite
       - tests-mysql
-      - tests-mssql
       - tests-postgres
-    env:
-      RUNS_ON: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-      PYTHON_MAJOR_MINOR_VERSION: ${{ matrix.python-version }}
-      CURRENT_PYTHON_MAJOR_MINOR_VERSIONS_AS_STRING: ${{needs.build-info.outputs.pythonVersionsListAsString}}
-    if: needs.build-info.outputs.upgradeToNewerDependencies != 'false'
-    steps:
-      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
-        with:
-          persist-credentials: false
-          submodules: recursive
-      - name: "Setup python"
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ needs.build-info.outputs.defaultPythonVersion }}
-          cache: 'pip'
-          cache-dependency-path: ./dev/breeze/setup*
-      - run: python -m pip install --editable ./dev/breeze/
-      - name: "Free space"
-        run: airflow-freespace
-      - name: >
-          Wait for CI images
-          ${{ needs.build-info.outputs.pythonVersions }}:${{ env.GITHUB_REGISTRY_PULL_IMAGE_TAG }}
-        run: ./scripts/ci/images/ci_wait_for_and_verify_all_ci_images.sh
-        env:
-          VERIFY_IMAGE: "false"
-      - name: "Generate constraints with PyPI providers"
-        run: ./scripts/ci/constraints/ci_generate_all_constraints.sh
-        env:
-          GENERATE_CONSTRAINTS_MODE: "pypi-providers"
-          PR_LABELS: "${{ needs.build-info.outputs.pullRequestLabels }}"
-      - name: "Generate constraints with source providers"
-        run: ./scripts/ci/constraints/ci_generate_all_constraints.sh
-        env:
-          GENERATE_CONSTRAINTS_MODE: "source-providers"
-          PR_LABELS: "${{ needs.build-info.outputs.pullRequestLabels }}"
-      - name: "Generate constraints without providers"
-        run: ./scripts/ci/constraints/ci_generate_all_constraints.sh
-        env:
-          GENERATE_CONSTRAINTS_MODE: "no-providers"
-          PR_LABELS: "${{ needs.build-info.outputs.pullRequestLabels }}"
-      - name: "Set constraints branch name"
-        id: constraints-branch
-        run: ./scripts/ci/constraints/ci_branch_constraints.sh
-      # only actually checkout and push it when we are in apache/airflow repository
-      - name: Checkout ${{ steps.constraints-branch.outputs.branch }}
-        uses: actions/checkout@v2
-        if: >
-          github.repository == 'apache/airflow' &&
-          (github.event_name == 'push' || github.event_name == 'schedule')
-        with:
-          path: "repo"
-          ref: ${{ steps.constraints-branch.outputs.branch }}
-          persist-credentials: false
-      - name: "Commit changed constraint files for ${{needs.build-info.outputs.pythonVersions}}"
-        run: ./scripts/ci/constraints/ci_commit_constraints.sh
-        if: >
-          github.repository == 'apache/airflow' &&
-          (github.event_name == 'push' || github.event_name == 'schedule')
-      - name: "Push changes"
-        uses: ./.github/actions/github-push-action
-        if: >
-          github.repository == 'apache/airflow' &&
-          (github.event_name == 'push' || github.event_name == 'schedule')
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ steps.constraints-branch.outputs.branch }}
-          directory: "repo"
+      - tests-non-db
+      - tests-integration-system
+    uses: ./.github/workflows/finalize-tests.yml
+    with:
+      runs-on-as-json-public: ${{ needs.build-info.outputs.runs-on-as-json-public }}
+      runs-on-as-json-self-hosted: ${{ needs.build-info.outputs.runs-on-as-json-self-hosted }}
+      image-tag: ${{ needs.build-info.outputs.image-tag }}
+      python-versions: ${{ needs.build-info.outputs.python-versions }}
+      python-versions-list-as-string: ${{ needs.build-info.outputs.python-versions-list-as-string }}
+      branch: ${{ needs.build-info.outputs.default-branch }}
+      constraints-branch: ${{ needs.build-info.outputs.default-constraints-branch }}
+      default-python-version: ${{ needs.build-info.outputs.default-python-version }}
+      in-workflow-build: ${{ needs.build-info.outputs.in-workflow-build }}
+      upgrade-to-newer-dependencies: ${{ needs.build-info.outputs.upgrade-to-newer-dependencies }}
+      include-success-outputs: ${{ needs.build-info.outputs.include-success-outputs }}
+      docker-cache: ${{ needs.build-info.outputs.docker-cache }}
+      disable-airflow-repo-cache: ${{ needs.build-info.outputs.disable-airflow-repo-cache }}
+      canary-run: ${{ needs.build-info.outputs.canary-run }}
 
-  # Push BuildX cache to GitHub Registry in Apache repository, if all tests are successful and build
-  # is executed as result of direct push to "main" or one of the "vX-Y-test" branches
-  # It rebuilds all images using just-pushed constraints using buildx and pushes them to registry
-  # It will automatically check if a new python image was released and will pull the latest one if needed
-  push-buildx-cache-to-github-registry:
-    permissions:
-      packages: write
-    timeout-minutes: 120
-    name: "Push images as cache to GitHub Registry"
-    runs-on: ${{ fromJson(needs.build-info.outputs.runsOn) }}
+  notify-slack-failure:
+    name: "Notify Slack on Failure"
     needs:
-      - build-info
-      - constraints
-      - docs
-    # Only run it for direct pushes and scheduled builds
-    if: >
-      (github.event_name == 'push' || github.event_name == 'schedule')
-      && github.repository == 'apache/airflow'
-    strategy:
-      matrix:
-        python-version: ${{ fromJson(needs.build-info.outputs.pythonVersions) }}
-    env:
-      RUNS_ON: ${{ fromJson(needs.build-info.outputs.runsOn) }}
-      PYTHON_MAJOR_MINOR_VERSION: ${{ matrix.python-version }}
-      # Build cache for both platforms for development even if we are releasing
-      # PROD images only for amd64
-      PLATFORM: "linux/amd64,linux/arm64"
-      # Rebuild images before push using the latest constraints (just pushed) without
-      # eager upgrade. Do not wait for images, but rebuild them
-      UPGRADE_TO_NEWER_DEPENDENCIES: "false"
+      - basic-tests
+      - additional-ci-image-checks
+      - providers
+      - tests-helm
+      - tests-special
+      - tests-with-lowest-direct-resolution
+      - additional-prod-image-tests
+      - tests-kubernetes
+      - tests-task-sdk
+      - finalize-tests
+    if: github.event_name == 'schedule' && failure()
+    runs-on: ["ubuntu-22.04"]
     steps:
-      - name: "Checkout ${{ github.ref }} ( ${{ github.sha }} )"
-        uses: actions/checkout@v2
+      - name: Notify Slack
+        id: slack
+        uses: slackapi/slack-github-action@v1.27.0
         with:
-          persist-credentials: false
-      - name: "Setup python"
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ needs.build-info.outputs.defaultPythonVersion }}
-          cache: 'pip'
-          cache-dependency-path: ./dev/breeze/setup*
-      - run: python -m pip install --editable ./dev/breeze/
-      - name: "Free space"
-        run: airflow-freespace
-      - name: "Build CI image cache and push ${{env.PYTHON_MAJOR_MINOR_VERSION}}"
-        run: ./scripts/ci/images/ci_build_ci_image_on_ci.sh
+          channel-id: 'internal-airflow-ci-cd'
+          # yamllint disable rule:line-length
+          payload: |
+            {
+              "text": "🚨🕒 Scheduled CI Failure Alert 🕒🚨\n\n*Details:* <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View the failure log>",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "🚨🕒 Scheduled CI Failure Alert 🕒🚨\n\n*Details:* <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View the failure log>"
+                  }
+                }
+              ]
+            }
+          # yamllint enable rule:line-length
         env:
-          PREPARE_BUILDX_CACHE: "true"
-          GITHUB_REGISTRY_PULL_IMAGE_TAG: "latest"
-          GITHUB_REGISTRY_PUSH_IMAGE_TAG: "latest"
-      - name: "Build CI image cache and push ${{env.PYTHON_MAJOR_MINOR_VERSION}}"
-        run: ./scripts/ci/images/ci_build_prod_image_on_ci.sh
-        env:
-          VERSION_SUFFIX_FOR_PYPI: ".dev0"
-          PREPARE_BUILDX_CACHE: "true"
-          GITHUB_REGISTRY_PULL_IMAGE_TAG: "latest"
-          GITHUB_REGISTRY_PUSH_IMAGE_TAG: "latest"
+          SLACK_BOT_TOKEN: ${{ env.SLACK_BOT_TOKEN }}

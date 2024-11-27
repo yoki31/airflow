@@ -15,29 +15,52 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import MetaData, String
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import Column, Integer, MetaData, String, text
+from sqlalchemy.orm import registry
 
 from airflow.configuration import conf
 
-SQL_ALCHEMY_SCHEMA = conf.get("core", "SQL_ALCHEMY_SCHEMA")
+SQL_ALCHEMY_SCHEMA = conf.get("database", "SQL_ALCHEMY_SCHEMA")
 
-metadata = (
-    None if not SQL_ALCHEMY_SCHEMA or SQL_ALCHEMY_SCHEMA.isspace() else MetaData(schema=SQL_ALCHEMY_SCHEMA)
-)
-Base: Any = declarative_base(metadata=metadata)
+# For more information about what the tokens in the naming convention
+# below mean, see:
+# https://docs.sqlalchemy.org/en/14/core/metadata.html#sqlalchemy.schema.MetaData.params.naming_convention
+naming_convention = {
+    "ix": "idx_%(column_0_N_label)s",
+    "uq": "%(table_name)s_%(column_0_N_name)s_uq",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "%(table_name)s_%(column_0_name)s_fkey",
+    "pk": "%(table_name)s_pkey",
+}
+
+
+def _get_schema():
+    if not SQL_ALCHEMY_SCHEMA or SQL_ALCHEMY_SCHEMA.isspace():
+        return None
+    return SQL_ALCHEMY_SCHEMA
+
+
+metadata = MetaData(schema=_get_schema(), naming_convention=naming_convention)
+mapper_registry = registry(metadata=metadata)
+_sentinel = object()
+
+if TYPE_CHECKING:
+    Base = Any
+else:
+    Base = mapper_registry.generate_base()
 
 ID_LEN = 250
 
 
 def get_id_collation_args():
-    """Get SQLAlchemy args to use for COLLATION"""
-    collation = conf.get('core', 'sql_engine_collation_for_ids', fallback=None)
+    """Get SQLAlchemy args to use for COLLATION."""
+    collation = conf.get("database", "sql_engine_collation_for_ids", fallback=None)
     if collation:
-        return {'collation': collation}
+        return {"collation": collation}
     else:
         # Automatically use utf8mb3_bin collation for mysql
         # This is backwards-compatible. All our IDS are ASCII anyway so even if
@@ -49,14 +72,25 @@ def get_id_collation_args():
         #
         # We cannot use session/dialect as at this point we are trying to determine the right connection
         # parameters, so we use the connection
-        conn = conf.get('core', 'sql_alchemy_conn', fallback='')
-        if conn.startswith('mysql') or conn.startswith("mariadb"):
-            return {'collation': 'utf8mb3_bin'}
+        conn = conf.get("database", "sql_alchemy_conn", fallback="")
+        if conn.startswith(("mysql", "mariadb")):
+            return {"collation": "utf8mb3_bin"}
         return {}
 
 
-COLLATION_ARGS = get_id_collation_args()
+COLLATION_ARGS: dict[str, Any] = get_id_collation_args()
 
 
 def StringID(*, length=ID_LEN, **kwargs) -> String:
     return String(length=length, **kwargs, **COLLATION_ARGS)
+
+
+class TaskInstanceDependencies(Base):
+    """Base class for depending models linked to TaskInstance."""
+
+    __abstract__ = True
+
+    task_id = Column(StringID(), nullable=False)
+    dag_id = Column(StringID(), nullable=False)
+    run_id = Column(StringID(), nullable=False)
+    map_index = Column(Integer, nullable=False, server_default=text("-1"))

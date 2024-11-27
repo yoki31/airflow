@@ -14,20 +14,24 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from __future__ import annotations
 
 import argparse
 import os
 import sys
-from glob import glob
+from pathlib import Path
 
 import jinja2
 
+# isort:off (needed to workaround isort bug)
 from docs.exts.provider_yaml_utils import load_package_data
+
+# isort:on (needed to workaround isort bug)
 
 CURRENT_DIR = os.path.abspath(os.path.dirname(__file__))
 DOCS_DIR = os.path.abspath(os.path.join(CURRENT_DIR, os.pardir, os.pardir))
-BUILD_DIR = os.path.abspath(os.path.join(DOCS_DIR, '_build'))
-ALL_PROVIDER_YAMLS = load_package_data()
+BUILD_DIR = os.path.abspath(os.path.join(DOCS_DIR, "_build"))
+ALL_PROVIDER_YAMLS_WITH_SUSPENDED = load_package_data(include_suspended=True)
 
 
 def _get_jinja_env():
@@ -41,24 +45,16 @@ def _render_template(template_name, **kwargs):
 
 
 def _render_content():
-    provider_packages = [
-        os.path.basename(os.path.dirname(p)) for p in glob(f"{BUILD_DIR}/docs/apache-airflow-providers-*/")
-    ]
     providers = []
-    for package_name in provider_packages:
+    provider_yamls = {p["package-name"]: p for p in ALL_PROVIDER_YAMLS_WITH_SUSPENDED}
+    for path in sorted(Path(BUILD_DIR).glob("docs/apache-airflow-providers-*/")):
+        package_name = path.name
         try:
-            current_provider = next(
-                provider_yaml
-                for provider_yaml in ALL_PROVIDER_YAMLS
-                if provider_yaml['package-name'] == package_name
-            )
-            providers.append(current_provider)
-        except StopIteration:
-            raise Exception(f"Could not find provider.yaml file for package: {package_name}")
+            providers.append(provider_yamls[package_name])
+        except KeyError:
+            print(f"WARNING! Could not find provider.yaml file for package: {package_name}")
 
-    content = _render_template(
-        'dev_index_template.html.jinja2', providers=sorted(providers, key=lambda k: k['package-name'])
-    )
+    content = _render_template("dev_index_template.html.jinja2", providers=providers)
     return content
 
 
@@ -73,8 +69,8 @@ def generate_index(out_file: str) -> None:
         output_file.write(content)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('outfile', nargs='?', type=argparse.FileType('w'), default=sys.stdout)
+    parser.add_argument("outfile", nargs="?", type=argparse.FileType("w"), default=sys.stdout)
     args = parser.parse_args()
     args.outfile.write(_render_content())

@@ -19,8 +19,6 @@
 # shellcheck source=scripts/in_container/_in_container_script_init.sh
 EXIT_CODE=0
 
-DISABLED_INTEGRATIONS=""
-
 # We want to avoid misleading messages and perform only forward lookup of the service IP address.
 # Netcat when run without -n performs both forward and reverse lookup and fails if the reverse
 # lookup name does not match the original name even if the host is reachable via IP. This happens
@@ -30,67 +28,16 @@ DISABLED_INTEGRATIONS=""
 # Even if this message might be harmless, it might hide the real reason for the problem
 # Which is the long time needed to start some services, seeing this message might be totally misleading
 # when you try to analyse the problem, that's why it's best to avoid it,
-function run_nc() {
-    local host=${1}
-    local port=${2}
-    local ip
-    ip=$(python -c "import socket; print(socket.gethostbyname('${host}'))")
 
-    nc -zvvn "${ip}" "${port}"
-}
+. "$( dirname "${BASH_SOURCE[0]}" )/check_connectivity.sh"
 
 function check_service {
     local label=$1
     local call=$2
     local max_check=${3:=1}
 
-    echo -n "${label}: "
-    while true
-    do
-        set +e
-        local last_check_result
-        last_check_result=$(eval "${call}" 2>&1)
-        local res=$?
-        set -e
-        if [[ ${res} == 0 ]]; then
-            echo  "${COLOR_GREEN}OK.  ${COLOR_RESET}"
-            break
-        else
-            echo -n "."
-            max_check=$((max_check-1))
-        fi
-        if [[ ${max_check} == 0 ]]; then
-            echo "${COLOR_RED}ERROR: Maximum number of retries while checking service. Exiting ${COLOR_RESET}"
-            break
-        else
-            sleep 1
-        fi
-    done
-    if [[ ${res} != 0 ]]; then
-        echo "Service could not be started!"
-        echo
-        echo "$ ${call}"
-        echo "${last_check_result}"
-        echo
-        EXIT_CODE=${res}
-    fi
-}
-
-function check_integration {
-    local integration_label=$1
-    local integration_name=$2
-    local call=$3
-    local max_check=${4:=1}
-
-    local env_var_name
-    env_var_name=INTEGRATION_${integration_name^^}
-    if [[ ${!env_var_name:=} != "true" ]]; then
-        if [[ ! ${DISABLED_INTEGRATIONS} == *" ${integration_name}"* ]]; then
-            DISABLED_INTEGRATIONS="${DISABLED_INTEGRATIONS} ${integration_name}"
-        fi
-        return
-    fi
-    check_service "${integration_label}" "${call}" "${max_check}"
+   check_service_connection "${label}" "${call}" "${max_check}"
+   EXIT_CODE=$?
 }
 
 function check_db_backend {
@@ -105,6 +52,9 @@ function check_db_backend {
         check_service "MSSQL Login Check" "airflow db check" "${max_check}"
     elif [[ ${BACKEND} == "sqlite" ]]; then
         return
+    elif [[ ${BACKEND} == "none" ]]; then
+        echo "${COLOR_YELLOW}WARNING: Using no database backend!${COLOR_RESET}"
+        return
     else
         echo "Unknown backend. Supported values: [postgres,mysql,mssql,sqlite]. Current value: [${BACKEND}]"
         exit 1
@@ -112,7 +62,7 @@ function check_db_backend {
 }
 
 function resetdb_if_requested() {
-    if [[ ${DB_RESET:="false"} == "true" ]]; then
+    if [[ ${DB_RESET:="false"} == "true" || ${DB_RESET} == "True" ]]; then
         echo
         echo "Resetting the DB"
         echo
@@ -125,17 +75,31 @@ function resetdb_if_requested() {
 }
 
 function startairflow_if_requested() {
-    if [[ ${START_AIRFLOW:="false"} == "true" ]]; then
+    if [[ ${START_AIRFLOW:="false"} == "true" || ${START_AIRFLOW} == "True" ]]; then
         echo
         echo "Starting Airflow"
         echo
-        export AIRFLOW__CORE__LOAD_DEFAULT_CONNECTIONS=${LOAD_DEFAULT_CONNECTIONS}
         export AIRFLOW__CORE__LOAD_EXAMPLES=${LOAD_EXAMPLES}
 
         . "$( dirname "${BASH_SOURCE[0]}" )/configure_environment.sh"
 
-        airflow db init
-        airflow users create -u admin -p admin -f Thor -l Adminstra -r Admin -e dummy@dummy.email
+        if airflow db migrate
+        then
+            if [[ ${LOAD_DEFAULT_CONNECTIONS=} == "true" || ${LOAD_DEFAULT_CONNECTIONS=} == "True" ]]; then
+                echo
+                echo "${COLOR_BLUE}Creating default connections${COLOR_RESET}"
+                echo
+                airflow connections create-default-connections
+            fi
+        else
+            echo "${COLOR_YELLOW}Failed to run 'airflow db migrate'.${COLOR_RESET}"
+            echo "${COLOR_BLUE}This could be because you are installing old airflow version${COLOR_RESET}"
+            echo "${COLOR_BLUE}Attempting to run deprecated 'airflow db init' instead.${COLOR_RESET}"
+            # For Airflow versions that do not support db migrate, we should run airflow db init and
+            # set the removed AIRFLOW__DATABASE__LOAD_DEFAULT_CONNECTIONS
+            AIRFLOW__DATABASE__LOAD_DEFAULT_CONNECTIONS=${LOAD_DEFAULT_CONNECTIONS} airflow db init
+        fi
+        airflow users create -u admin -p admin -f Thor -l Adminstra -r Admin -e admin@email.domain
 
         . "$( dirname "${BASH_SOURCE[0]}" )/run_init_script.sh"
 
@@ -143,32 +107,67 @@ function startairflow_if_requested() {
     return $?
 }
 
-echo "==============================================================================================="
-echo "             Checking integrations and backends"
-echo "==============================================================================================="
+echo
+echo "${COLOR_BLUE}Checking backend and integrations.${COLOR_RESET}"
+echo
+
 if [[ -n ${BACKEND=} ]]; then
     check_db_backend 50
-    echo "-----------------------------------------------------------------------------------------------"
 fi
-check_integration "Kerberos" "kerberos" "run_nc kdc-server-example-com 88" 50
-check_integration "MongoDB" "mongo" "run_nc mongo 27017" 50
-check_integration "Redis" "redis" "run_nc redis 6379" 50
-check_integration "Cassandra" "cassandra" "run_nc cassandra 9042" 50
-check_integration "OpenLDAP" "openldap" "run_nc openldap 389" 50
-check_integration "Trino (HTTP)" "trino" "run_nc trino 8080" 50
-check_integration "Trino (HTTPS)" "trino" "run_nc trino 7778" 50
-check_integration "Trino (API)" "trino" \
-    "curl --max-time 1 http://trino:8080/v1/info/ | grep '\"starting\":false'" 50
-check_integration "Pinot (HTTP)" "pinot" "run_nc pinot 9000" 50
-CMD="curl --max-time 1 -X GET 'http://pinot:9000/health' -H 'accept: text/plain' | grep OK"
-check_integration "Pinot (Controller API)" "pinot" "${CMD}" 50
-CMD="curl --max-time 1 -X GET 'http://pinot:9000/pinot-controller/admin' -H 'accept: text/plain' | grep GOOD"
-check_integration "Pinot (Controller API)" "pinot" "${CMD}" 50
-CMD="curl --max-time 1 -X GET 'http://pinot:8000/health' -H 'accept: text/plain' | grep OK"
-check_integration "Pinot (Broker API)" "pinot" "${CMD}" 50
-check_integration "RabbitMQ" "rabbitmq" "run_nc rabbitmq 5672" 50
+echo
 
-echo "-----------------------------------------------------------------------------------------------"
+if [[ ${INTEGRATION_KERBEROS} == "true" ]]; then
+    check_service "Kerberos" "run_nc kdc-server-example-com 88" 50
+fi
+if [[ ${INTEGRATION_MONGO} == "true" ]]; then
+    check_service "MongoDB" "run_nc mongo 27017" 50
+fi
+if [[ ${INTEGRATION_REDIS} == "true" ]]; then
+    check_service "Redis" "run_nc redis 6379" 50
+fi
+if [[ ${INTEGRATION_CELERY} == "true" ]]; then
+    check_service "Redis" "run_nc redis 6379" 50
+    check_service "RabbitMQ" "run_nc rabbitmq 5672" 50
+fi
+if [[ ${INTEGRATION_CASSANDRA} == "true" ]]; then
+    check_service "Cassandra" "run_nc cassandra 9042" 50
+fi
+if [[ ${INTEGRATION_TRINO} == "true" ]]; then
+    check_service "Trino (HTTP)" "run_nc trino 8080" 50
+    check_service "Trino (HTTPS)" "run_nc trino 7778" 50
+    check_service "Trino (API)" "curl --max-time 1 http://trino:8080/v1/info/ | grep '\"starting\":false'" 50
+fi
+if [[ ${INTEGRATION_PINOT} == "true" ]]; then
+    check_service "Pinot (HTTP)" "run_nc pinot 9000" 50
+    CMD="curl --max-time 1 -X GET 'http://pinot:9000/health' -H 'accept: text/plain' | grep OK"
+    check_service "Pinot (Controller API)" "${CMD}" 50
+    CMD="curl --max-time 1 -X GET 'http://pinot:9000/pinot-controller/admin' -H 'accept: text/plain' | grep GOOD"
+    check_service "Pinot (Controller API)" "${CMD}" 50
+    CMD="curl --max-time 1 -X GET 'http://pinot:8000/health' -H 'accept: text/plain' | grep OK"
+    check_service "Pinot (Broker API)" "${CMD}" 50
+fi
+
+if [[ ${INTEGRATION_QDRANT} == "true" ]]; then
+    check_service "Qdrant" "run_nc qdrant 6333" 50
+    CMD="curl -f -X GET 'http://qdrant:6333/collections'"
+    check_service "Qdrant (Collections API)" "${CMD}" 50
+fi
+
+if [[ ${INTEGRATION_KAFKA} == "true" ]]; then
+    check_service "Kafka Cluster" "run_nc broker 9092" 50
+fi
+
+if [[ ${INTEGRATION_MSSQL} == "true" ]]; then
+    check_service "mssql" "run_nc mssql 1433" 50
+fi
+
+if [[ ${INTEGRATION_DRILL} == "true" ]]; then
+    check_service "drill" "run_nc drill 8047" 50
+fi
+
+if [[ ${INTEGRATION_YDB} == "true" ]]; then
+    check_service "YDB Cluster" "run_nc ydb 2136" 50
+fi
 
 if [[ ${EXIT_CODE} != 0 ]]; then
     echo
@@ -181,11 +180,3 @@ fi
 
 resetdb_if_requested
 startairflow_if_requested
-
-if [[ -n ${DISABLED_INTEGRATIONS=} ]]; then
-    echo
-    echo "Disabled integrations:${DISABLED_INTEGRATIONS}"
-    echo
-    echo "Enable them via --integration <INTEGRATION_NAME> flags (you can use 'all' for all)"
-    echo
-fi
